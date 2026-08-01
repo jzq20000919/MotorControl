@@ -16,3 +16,4 @@ dependencies:
   #   public: true
   lvgl/lvgl: ^9.5.0
   espressif/esp_lvgl_port: ^2.8.0
+  espressif/mqtt: ^1.0.0

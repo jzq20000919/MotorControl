@@ -2,6 +2,7 @@
 /*
 !/.gitignore
 !/.gitattributes
+!/mosquitto-dev.conf
 !/MCSDK_FOC_MIX/
 !/ESP32_LVGL/
 

@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "board_keys.h"
+#include "mqtt_manager.h"
 #include "motor_link.h"
 #include "wifi_manager.h"
 
@@ -34,6 +35,7 @@ typedef enum
     UI_PAGE_UART,
     UI_PAGE_CAN,
     UI_PAGE_WIFI,
+    UI_PAGE_MQTT,
     UI_PAGE_SPEED,
     UI_PAGE_POSITION,
     UI_PAGE_SPEED_CHART,
@@ -46,6 +48,7 @@ static const char *s_page_names[UI_PAGE_COUNT] = {
     "USART",
     "CAN",
     "WI-FI",
+    "MQTT",
     "SPEED",
     "POSITION",
     "SPEED CURVE",
@@ -58,6 +61,7 @@ static lv_obj_t *s_page_label;
 static lv_obj_t *s_uart_status_label;
 static lv_obj_t *s_can_status_label;
 static lv_obj_t *s_wifi_status_label;
+static lv_obj_t *s_mqtt_status_label;
 static lv_obj_t *s_active_transport_label;
 static lv_obj_t *s_home_state_label;
 static lv_obj_t *s_can_state_label;
@@ -72,6 +76,10 @@ static lv_obj_t *s_wifi_password_textarea;
 static lv_obj_t *s_wifi_page_state_label;
 static lv_obj_t *s_wifi_detail_label;
 static lv_obj_t *s_wifi_keyboard;
+static lv_obj_t *s_mqtt_uri_textarea;
+static lv_obj_t *s_mqtt_page_state_label;
+static lv_obj_t *s_mqtt_rx_label;
+static lv_obj_t *s_mqtt_keyboard;
 static lv_obj_t *s_stop_button;
 static lv_obj_t *s_speed_stop_button;
 static lv_obj_t *s_position_stop_button;
@@ -127,6 +135,7 @@ static bool s_swipe_blocked;
 static bool s_page_animating;
 static uint32_t s_wifi_revision = UINT32_MAX;
 static uint32_t s_wifi_scan_generation = UINT32_MAX;
+static uint32_t s_mqtt_revision = UINT32_MAX;
 static uint16_t s_wifi_network_count;
 static bool s_wifi_network_secured[WIFI_MANAGER_MAX_APS];
 static char s_wifi_network_ssids[WIFI_MANAGER_MAX_APS]
@@ -188,6 +197,14 @@ static void ui_hide_wifi_keyboard(void)
     }
 }
 
+static void ui_hide_mqtt_keyboard(void)
+{
+    if (s_mqtt_keyboard != NULL) {
+        lv_keyboard_set_textarea(s_mqtt_keyboard, NULL);
+        lv_obj_add_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void ui_show_page(ui_page_t page)
 {
     if (page >= UI_PAGE_COUNT) {
@@ -196,6 +213,9 @@ static void ui_show_page(ui_page_t page)
 
     if (page != UI_PAGE_WIFI) {
         ui_hide_wifi_keyboard();
+    }
+    if (page != UI_PAGE_MQTT) {
+        ui_hide_mqtt_keyboard();
     }
 
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
@@ -247,6 +267,9 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
 
     if (page != UI_PAGE_WIFI) {
         ui_hide_wifi_keyboard();
+    }
+    if (page != UI_PAGE_MQTT) {
+        ui_hide_mqtt_keyboard();
     }
 
     lv_obj_t *outgoing = s_pages[s_current_page];
@@ -565,6 +588,111 @@ static void ui_wifi_disconnect_event(lv_event_t *event)
     }
 }
 
+static void ui_mqtt_uri_event(lv_event_t *event)
+{
+    (void)event;
+    lv_keyboard_set_textarea(s_mqtt_keyboard, s_mqtt_uri_textarea);
+    lv_obj_remove_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_mqtt_keyboard);
+}
+
+static void ui_mqtt_keyboard_event(lv_event_t *event)
+{
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
+        ui_hide_mqtt_keyboard();
+    }
+}
+
+static void ui_mqtt_connect_event(lv_event_t *event)
+{
+    (void)event;
+    wifi_manager_snapshot_t wifi_snapshot;
+    wifi_manager_get_snapshot(&wifi_snapshot);
+    if (!wifi_snapshot.connected) {
+        lv_label_set_text(
+            s_mqtt_page_state_label,
+            "Connect Wi-Fi before MQTT");
+        return;
+    }
+
+    ui_hide_mqtt_keyboard();
+    const esp_err_t result = mqtt_manager_connect_async(
+        lv_textarea_get_text(s_mqtt_uri_textarea));
+    if (result != ESP_OK) {
+        lv_label_set_text_fmt(
+            s_mqtt_page_state_label,
+            "Invalid broker URI: %s",
+            esp_err_to_name(result));
+    }
+}
+
+static void ui_mqtt_disconnect_event(lv_event_t *event)
+{
+    (void)event;
+    ui_hide_mqtt_keyboard();
+    const esp_err_t result = mqtt_manager_disconnect_async();
+    if (result != ESP_OK) {
+        lv_label_set_text_fmt(
+            s_mqtt_page_state_label,
+            "Disconnect failed: %s",
+            esp_err_to_name(result));
+    }
+}
+
+static void ui_mqtt_publish_test(
+    const char *topic,
+    const char *payload)
+{
+    const esp_err_t result = mqtt_manager_publish(topic, payload);
+    if (result != ESP_OK) {
+        lv_label_set_text(
+            s_mqtt_page_state_label,
+            "MQTT is offline - connect first");
+    }
+}
+
+static void ui_mqtt_ping_event(lv_event_t *event)
+{
+    (void)event;
+    ui_mqtt_publish_test(
+        "motor/hmi/test/ping",
+        "PING from ESP32-S3");
+}
+
+static void ui_mqtt_wifi_event(lv_event_t *event)
+{
+    (void)event;
+    wifi_manager_snapshot_t snapshot;
+    wifi_manager_get_snapshot(&snapshot);
+    char payload[128];
+    snprintf(
+        payload,
+        sizeof(payload),
+        "ssid=%s ip=%s",
+        snapshot.ssid,
+        snapshot.ip_address);
+    ui_mqtt_publish_test("motor/hmi/test/wifi", payload);
+}
+
+static void ui_mqtt_motor_event(lv_event_t *event)
+{
+    (void)event;
+    motor_link_snapshot_t snapshot;
+    motor_link_get_snapshot(&snapshot);
+    char payload[160];
+    snprintf(
+        payload,
+        sizeof(payload),
+        "running=%u mode=%s speed=%d position=%u.%02u",
+        snapshot.motor_running ? 1U : 0U,
+        snapshot.mode == MOTOR_LINK_MODE_SPEED ? "speed" : "position",
+        snapshot.measured_speed_rpm,
+        snapshot.current_position_cdeg / 100U,
+        snapshot.current_position_cdeg % 100U);
+    ui_mqtt_publish_test("motor/hmi/test/motor", payload);
+}
+
 static void ui_navigation_event(lv_event_t *event)
 {
     const ui_page_t page =
@@ -696,12 +824,13 @@ static void ui_create_home_page(lv_obj_t *parent)
     ui_create_navigation_button(parent, "USART", UI_PAGE_UART, 9, 40);
     ui_create_navigation_button(parent, "CAN", UI_PAGE_CAN, 113, 40);
     ui_create_navigation_button(parent, "WI-FI", UI_PAGE_WIFI, 217, 40);
-    ui_create_navigation_button(parent, "SPEED", UI_PAGE_SPEED, 9, 80);
-    ui_create_navigation_button(parent, "POSITION", UI_PAGE_POSITION, 113, 80);
+    ui_create_navigation_button(parent, "MQTT", UI_PAGE_MQTT, 9, 80);
+    ui_create_navigation_button(parent, "SPEED", UI_PAGE_SPEED, 113, 80);
+    ui_create_navigation_button(parent, "POSITION", UI_PAGE_POSITION, 217, 80);
     ui_create_navigation_button(
-        parent, "SPEED CURVE", UI_PAGE_SPEED_CHART, 217, 80);
+        parent, "SPEED CURVE", UI_PAGE_SPEED_CHART, 61, 120);
     ui_create_navigation_button(
-        parent, "CURRENT", UI_PAGE_CURRENT_CHART, 113, 120);
+        parent, "CURRENT", UI_PAGE_CURRENT_CHART, 165, 120);
 
     s_active_transport_label = ui_create_label(
         parent, "ACTIVE: NONE", UI_COLOR_MUTED, &lv_font_montserrat_14);
@@ -935,6 +1064,88 @@ static void ui_create_wifi_page(lv_obj_t *parent)
         LV_EVENT_ALL,
         NULL);
     lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ui_create_mqtt_page(lv_obj_t *parent)
+{
+    lv_obj_t *title = ui_create_label(
+        parent, "MQTT TEST", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_set_pos(title, 8, 4);
+
+    s_mqtt_uri_textarea = lv_textarea_create(parent);
+    lv_obj_set_size(s_mqtt_uri_textarea, 204, 34);
+    lv_obj_set_pos(s_mqtt_uri_textarea, 8, 34);
+    lv_textarea_set_one_line(s_mqtt_uri_textarea, true);
+    lv_textarea_set_max_length(
+        s_mqtt_uri_textarea,
+        MQTT_MANAGER_URI_MAX_LEN);
+    lv_textarea_set_text(
+        s_mqtt_uri_textarea,
+        "mqtt://192.168.10.4:1883");
+    lv_obj_set_style_bg_color(
+        s_mqtt_uri_textarea,
+        lv_color_hex(UI_COLOR_PANEL),
+        LV_PART_MAIN);
+    lv_obj_set_style_text_color(
+        s_mqtt_uri_textarea,
+        lv_color_hex(UI_COLOR_TEXT),
+        LV_PART_MAIN);
+    lv_obj_set_style_border_color(
+        s_mqtt_uri_textarea,
+        lv_color_hex(UI_COLOR_PANEL_LIGHT),
+        LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        s_mqtt_uri_textarea,
+        ui_mqtt_uri_event,
+        LV_EVENT_CLICKED,
+        NULL);
+
+    ui_create_wifi_action_button(
+        parent, "CONNECT", UI_COLOR_BLUE, 220, 34,
+        ui_mqtt_connect_event);
+
+    s_mqtt_page_state_label = ui_create_label(
+        parent, "Connect Wi-Fi, then connect MQTT", UI_COLOR_MUTED,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_mqtt_page_state_label, 10, 75);
+    lv_obj_set_width(s_mqtt_page_state_label, 300);
+    lv_label_set_long_mode(s_mqtt_page_state_label, LV_LABEL_LONG_DOT);
+
+    ui_create_wifi_action_button(
+        parent, "PING", UI_COLOR_CYAN, 8, 104,
+        ui_mqtt_ping_event);
+    ui_create_wifi_action_button(
+        parent, "WI-FI INFO", UI_COLOR_CYAN, 114, 104,
+        ui_mqtt_wifi_event);
+    ui_create_wifi_action_button(
+        parent, "MOTOR", UI_COLOR_CYAN, 220, 104,
+        ui_mqtt_motor_event);
+
+    s_mqtt_rx_label = ui_create_label(
+        parent,
+        "RX motor/hmi/test/rx\nNo message from MQTTX",
+        UI_COLOR_MUTED,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_mqtt_rx_label, 10, 149);
+    lv_obj_set_size(s_mqtt_rx_label, 202, 48);
+    lv_label_set_long_mode(s_mqtt_rx_label, LV_LABEL_LONG_DOT);
+
+    ui_create_wifi_action_button(
+        parent, "DISCONNECT", UI_COLOR_RED, 220, 153,
+        ui_mqtt_disconnect_event);
+
+    s_mqtt_keyboard = lv_keyboard_create(lv_screen_active());
+    lv_obj_set_size(s_mqtt_keyboard, 320, 160);
+    lv_obj_align(s_mqtt_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_mode(s_mqtt_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_obj_set_style_bg_color(
+        s_mqtt_keyboard, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        s_mqtt_keyboard,
+        ui_mqtt_keyboard_event,
+        LV_EVENT_ALL,
+        NULL);
+    lv_obj_add_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void ui_create_speed_page(lv_obj_t *parent)
@@ -1612,11 +1823,44 @@ static void ui_update_wifi_data(void)
     s_wifi_revision = snapshot.revision;
 }
 
+static void ui_update_mqtt_data(void)
+{
+    mqtt_manager_snapshot_t snapshot;
+    mqtt_manager_get_snapshot(&snapshot);
+    if (snapshot.revision == s_mqtt_revision) {
+        return;
+    }
+
+    lv_obj_set_style_text_color(
+        s_mqtt_status_label,
+        lv_color_hex(snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED),
+        LV_PART_MAIN);
+    if (snapshot.connected) {
+        lv_label_set_text_fmt(
+            s_mqtt_page_state_label,
+            "CONNECTED  TX %lu  RX %lu",
+            (unsigned long)snapshot.transmitted_messages,
+            (unsigned long)snapshot.received_messages);
+    } else {
+        lv_label_set_text(s_mqtt_page_state_label, snapshot.status);
+    }
+
+    if (snapshot.received_messages > 0U) {
+        lv_label_set_text_fmt(
+            s_mqtt_rx_label,
+            "RX %s\n%s",
+            snapshot.last_topic,
+            snapshot.last_payload);
+    }
+    s_mqtt_revision = snapshot.revision;
+}
+
 static void ui_timer_callback(lv_timer_t *timer)
 {
     (void)timer;
     ui_update_motor_data();
     ui_update_wifi_data();
+    ui_update_mqtt_data();
 }
 
 void motor_ui_create(lv_display_t *display)
@@ -1646,9 +1890,14 @@ void motor_ui_create(lv_display_t *display)
         LV_EVENT_CLICKED,
         NULL);
 
+    s_mqtt_status_label = ui_create_label(
+        screen, "MQTT", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_align(s_mqtt_status_label, LV_ALIGN_TOP_RIGHT, -6, 5);
     s_wifi_status_label = ui_create_label(
         screen, "WI-FI", UI_COLOR_RED, &lv_font_montserrat_12);
-    lv_obj_align(s_wifi_status_label, LV_ALIGN_TOP_RIGHT, -6, 5);
+    lv_obj_align_to(
+        s_wifi_status_label, s_mqtt_status_label,
+        LV_ALIGN_OUT_LEFT_MID, -10, 0);
     s_can_status_label = ui_create_label(
         screen, "CAN", UI_COLOR_RED, &lv_font_montserrat_12);
     lv_obj_align_to(
@@ -1683,6 +1932,7 @@ void motor_ui_create(lv_display_t *display)
     ui_create_uart_page(s_pages[UI_PAGE_UART]);
     ui_create_can_page(s_pages[UI_PAGE_CAN]);
     ui_create_wifi_page(s_pages[UI_PAGE_WIFI]);
+    ui_create_mqtt_page(s_pages[UI_PAGE_MQTT]);
     ui_create_speed_page(s_pages[UI_PAGE_SPEED]);
     ui_create_position_page(s_pages[UI_PAGE_POSITION]);
     ui_create_speed_chart_page(s_pages[UI_PAGE_SPEED_CHART]);
@@ -1693,9 +1943,11 @@ void motor_ui_create(lv_display_t *display)
     lv_obj_move_foreground(s_uart_status_label);
     lv_obj_move_foreground(s_can_status_label);
     lv_obj_move_foreground(s_wifi_status_label);
+    lv_obj_move_foreground(s_mqtt_status_label);
     lv_timer_create(ui_timer_callback, 50, NULL);
     ui_update_motor_data();
     ui_update_wifi_data();
+    ui_update_mqtt_data();
     lv_obj_update_layout(screen);
     lv_obj_invalidate(screen);
     /* The LVGL port task performs the invalidated full-screen refresh. */

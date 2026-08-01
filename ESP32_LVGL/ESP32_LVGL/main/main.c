@@ -20,6 +20,7 @@
 #include "board_touch.h"
 #include "motor_link.h"
 #include "motor_ui.h"
+#include "mqtt_manager.h"
 #include "wifi_manager.h"
 
 /* ============================================================
@@ -628,6 +629,13 @@ void app_main(void)
             TAG,
             "Wi-Fi initialization failed: %s",
             esp_err_to_name(wifi_result));
+    }
+    const esp_err_t mqtt_result = mqtt_manager_init();
+    if (mqtt_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "MQTT initialization failed: %s",
+            esp_err_to_name(mqtt_result));
     }
 
     /*
