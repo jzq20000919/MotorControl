@@ -8,7 +8,14 @@
 
 #define MQTT_MANAGER_URI_MAX_LEN 95U
 #define MQTT_MANAGER_TOPIC_MAX_LEN 63U
-#define MQTT_MANAGER_PAYLOAD_MAX_LEN 127U
+#define MQTT_MANAGER_PAYLOAD_MAX_LEN 511U
+#define MQTT_MANAGER_TEST_RX_TOPIC "motor/hmi/test/rx"
+#define MQTT_MANAGER_CONTROL_TOPIC "motor/control/command"
+
+typedef void (*mqtt_manager_message_callback_t)(
+    const char *topic,
+    const char *payload,
+    void *context);
 
 typedef struct
 {
@@ -30,6 +37,12 @@ esp_err_t mqtt_manager_disconnect_async(void);
 esp_err_t mqtt_manager_publish(
     const char *topic,
     const char *payload);
+esp_err_t mqtt_manager_publish_qos0(
+    const char *topic,
+    const char *payload);
+void mqtt_manager_set_message_callback(
+    mqtt_manager_message_callback_t callback,
+    void *context);
 void mqtt_manager_get_snapshot(mqtt_manager_snapshot_t *snapshot);
 
 #endif /* MQTT_MANAGER_H */

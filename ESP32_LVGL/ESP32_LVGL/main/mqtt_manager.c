@@ -14,7 +14,6 @@
 #define MQTT_MANAGER_COMMAND_QUEUE_LENGTH 4U
 #define MQTT_MANAGER_WORKER_STACK_SIZE 4096U
 #define MQTT_MANAGER_WORKER_PRIORITY 4U
-#define MQTT_MANAGER_RX_TOPIC "motor/hmi/test/rx"
 
 typedef enum
 {
@@ -35,6 +34,8 @@ static QueueHandle_t s_command_queue;
 static esp_mqtt_client_handle_t s_client;
 static mqtt_manager_snapshot_t s_snapshot;
 static char s_active_uri[MQTT_MANAGER_URI_MAX_LEN + 1U];
+static mqtt_manager_message_callback_t s_message_callback;
+static void *s_message_callback_context;
 
 static void mqtt_manager_lock(void)
 {
@@ -104,7 +105,11 @@ static void mqtt_manager_event_handler(
         if (event != NULL) {
             (void)esp_mqtt_client_subscribe(
                 event->client,
-                MQTT_MANAGER_RX_TOPIC,
+                MQTT_MANAGER_TEST_RX_TOPIC,
+                1);
+            (void)esp_mqtt_client_subscribe(
+                event->client,
+                MQTT_MANAGER_CONTROL_TOPIC,
                 1);
         }
         ESP_LOGI(TAG, "Connected to %s", s_active_uri);
@@ -125,10 +130,15 @@ static void mqtt_manager_event_handler(
         mqtt_manager_unlock();
         break;
 
-    case MQTT_EVENT_DATA:
+    case MQTT_EVENT_DATA: {
         if (event == NULL) {
             break;
         }
+        bool message_complete = false;
+        mqtt_manager_message_callback_t callback = NULL;
+        void *callback_context = NULL;
+        char completed_topic[MQTT_MANAGER_TOPIC_MAX_LEN + 1U];
+        char completed_payload[MQTT_MANAGER_PAYLOAD_MAX_LEN + 1U];
         mqtt_manager_lock();
         if (event->current_data_offset == 0) {
             mqtt_manager_copy_event_text(
@@ -157,10 +167,28 @@ static void mqtt_manager_event_handler(
         if (event->current_data_offset + event->data_len >=
             event->total_data_len) {
             s_snapshot.received_messages++;
-            mqtt_manager_set_status_locked("Message received from MQTTX");
+            mqtt_manager_set_status_locked("Message received");
+            strlcpy(
+                completed_topic,
+                s_snapshot.last_topic,
+                sizeof(completed_topic));
+            strlcpy(
+                completed_payload,
+                s_snapshot.last_payload,
+                sizeof(completed_payload));
+            callback = s_message_callback;
+            callback_context = s_message_callback_context;
+            message_complete = true;
         }
         mqtt_manager_unlock();
+        if (message_complete && callback != NULL) {
+            callback(
+                completed_topic,
+                completed_payload,
+                callback_context);
+        }
         break;
+    }
 
     case MQTT_EVENT_ERROR:
         mqtt_manager_lock();
@@ -384,6 +412,41 @@ esp_err_t mqtt_manager_publish(
     }
     mqtt_manager_unlock();
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t mqtt_manager_publish_qos0(
+    const char *topic,
+    const char *payload)
+{
+    if (topic == NULL || topic[0] == '\0' || payload == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    mqtt_manager_lock();
+    if (!s_snapshot.connected || s_client == NULL) {
+        mqtt_manager_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    const int message_id = esp_mqtt_client_enqueue(
+        s_client,
+        topic,
+        payload,
+        0,
+        0,
+        0,
+        true);
+    mqtt_manager_unlock();
+    return message_id >= 0 ? ESP_OK : ESP_FAIL;
+}
+
+void mqtt_manager_set_message_callback(
+    mqtt_manager_message_callback_t callback,
+    void *context)
+{
+    mqtt_manager_lock();
+    s_message_callback = callback;
+    s_message_callback_context = context;
+    mqtt_manager_unlock();
 }
 
 void mqtt_manager_get_snapshot(mqtt_manager_snapshot_t *snapshot)

@@ -1,13 +1,13 @@
 #pragma once
 
-#include "aspepprotocol.h"
+#include "wirelessprotocol.h"
 
 #include <QHash>
 #include <QMainWindow>
 
-class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QPlainTextEdit;
 class QRadioButton;
@@ -24,12 +24,11 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private slots:
-    void refreshPorts();
     void toggleConnection();
     void onConnectionChanged(bool connected, const QString &status);
     void onTelemetry(const FocTelemetry &telemetry);
     void onProtocolError(const QString &message);
-    void appendSerialLog(const QString &message);
+    void appendWirelessLog(const QString &message);
     void onModeChanged();
     void onSpeedChanged(int rpm);
     void submitSpeedTarget();
@@ -42,7 +41,7 @@ private:
     QWidget *createTelemetryPanel();
     QWidget *createFaultIndicatorPanel();
     QWidget *createControlPanel();
-    QWidget *createSerialLogPanel();
+    QWidget *createWirelessLogPanel();
     QWidget *createValueCard(const QString &key, const QString &title,
                              const QString &unit, const QString &color);
     void setValue(const QString &key, const QString &value);
@@ -50,10 +49,9 @@ private:
     void setControlsEnabled(bool enabled);
     static QString motorStateName(quint8 state);
 
-    AspepProtocol protocol_;
-    QTimer *telemetryTimer_ = nullptr;
-    QComboBox *portCombo_ = nullptr;
-    QComboBox *baudCombo_ = nullptr;
+    WirelessProtocol protocol_;
+    QLineEdit *brokerHostEdit_ = nullptr;
+    QSpinBox *brokerPortSpin_ = nullptr;
     QPushButton *connectButton_ = nullptr;
     QLabel *connectionDot_ = nullptr;
     QLabel *connectionText_ = nullptr;
@@ -68,7 +66,7 @@ private:
     QDoubleSpinBox *positionDurationSpin_ = nullptr;
     QLabel *positionCurrentLabel_ = nullptr;
     QLabel *positionTargetLabel_ = nullptr;
-    QPlainTextEdit *serialLog_ = nullptr;
+    QPlainTextEdit *wirelessLog_ = nullptr;
     QHash<QString, QLabel *> values_;
     QHash<quint16, QLabel *> faultIndicators_;
     bool applyingTelemetry_ = false;

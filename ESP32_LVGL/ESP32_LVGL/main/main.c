@@ -21,6 +21,7 @@
 #include "motor_link.h"
 #include "motor_ui.h"
 #include "mqtt_manager.h"
+#include "mqtt_motor_gateway.h"
 #include "wifi_manager.h"
 
 /* ============================================================
@@ -654,6 +655,13 @@ void app_main(void)
             TAG,
             "MQTT initialization failed: %s",
             esp_err_to_name(mqtt_result));
+    }
+    const esp_err_t mqtt_gateway_result = mqtt_motor_gateway_init();
+    if (mqtt_gateway_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "MQTT motor gateway initialization failed: %s",
+            esp_err_to_name(mqtt_gateway_result));
     }
 
     ESP_LOGI(TAG, "Creating motor control UI");

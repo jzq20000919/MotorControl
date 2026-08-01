@@ -110,6 +110,8 @@ void motor_link_get_snapshot(motor_link_snapshot_t *snapshot)
         snapshot->iq_reference_ma = uart.iq_reference_ma;
         /* The UART v1 telemetry has no Id reference field. */
         snapshot->id_reference_ma = 0;
+        snapshot->uq_mv = uart.uq_mv;
+        snapshot->ud_mv = uart.ud_mv;
         snapshot->received_frames = uart.received_frames;
         snapshot->transmitted_frames = uart.transmitted_frames;
         snapshot->transmit_errors = uart.transmit_errors;
@@ -167,4 +169,9 @@ void motor_link_acknowledge_fault(void)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_acknowledge_fault();
     if (s_transport == MOTOR_LINK_CAN) motor_can_acknowledge_fault();
+}
+void motor_link_zero_position(void)
+{
+    if (s_transport == MOTOR_LINK_UART) motor_uart_zero_position();
+    if (s_transport == MOTOR_LINK_CAN) motor_can_zero_position();
 }

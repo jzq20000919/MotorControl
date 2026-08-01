@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Network Widgets)
 
 qt_add_executable(QtFocMixControl WIN32
     src/main.cpp
@@ -14,13 +14,13 @@ qt_add_executable(QtFocMixControl WIN32
     src/mainwindow.h
     src/positiondial.cpp
     src/positiondial.h
-    src/serialtransport.cpp
-    src/serialtransport.h
-    src/aspepprotocol.cpp
-    src/aspepprotocol.h
+    src/mqttclient.cpp
+    src/mqttclient.h
+    src/wirelessprotocol.cpp
+    src/wirelessprotocol.h
 )
 
-target_link_libraries(QtFocMixControl PRIVATE Qt6::Widgets)
+target_link_libraries(QtFocMixControl PRIVATE Qt6::Network Qt6::Widgets)
 target_compile_definitions(QtFocMixControl PRIVATE
     QT_NO_CAST_FROM_ASCII
     QT_NO_CAST_TO_ASCII

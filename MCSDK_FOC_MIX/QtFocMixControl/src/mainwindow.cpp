@@ -10,11 +10,13 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollArea>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSpinBox>
@@ -73,26 +75,20 @@ MainWindow::MainWindow(QWidget *parent)
     content->addWidget(createTelemetryPanel(), 3);
     content->addWidget(createControlPanel(), 4);
     root->addLayout(content, 1);
-    root->addWidget(createSerialLogPanel());
+    root->addWidget(createWirelessLogPanel());
     setCentralWidget(central);
 
-    telemetryTimer_ = new QTimer(this);
-    telemetryTimer_->setInterval(50);
-
-    connect(telemetryTimer_, &QTimer::timeout,
-            &protocol_, &AspepProtocol::requestTelemetry);
-    connect(&protocol_, &AspepProtocol::connectionChanged,
+    connect(&protocol_, &WirelessProtocol::connectionChanged,
             this, &MainWindow::onConnectionChanged);
-    connect(&protocol_, &AspepProtocol::telemetryReceived,
+    connect(&protocol_, &WirelessProtocol::telemetryReceived,
             this, &MainWindow::onTelemetry);
-    connect(&protocol_, &AspepProtocol::protocolError,
+    connect(&protocol_, &WirelessProtocol::protocolError,
             this, &MainWindow::onProtocolError);
-    connect(&protocol_, &AspepProtocol::diagnosticMessage,
-            this, &MainWindow::appendSerialLog);
+    connect(&protocol_, &WirelessProtocol::diagnosticMessage,
+            this, &MainWindow::appendWirelessLog);
 
-    refreshPorts();
     setControlsEnabled(false);
-    statusBar()->showMessage(tr("请选择串口并连接"));
+    statusBar()->showMessage(tr("Enter the MQTT broker address and connect"));
 
     setStyleSheet(QStringLiteral(R"(
         QMainWindow, QWidget#centralWidget { background: #0b111b; color: #dbe7f7; }
@@ -140,7 +136,7 @@ QWidget *MainWindow::createHeader()
     auto *titles = new QVBoxLayout;
     auto *title = new QLabel(tr("FOC Motion Console"));
     title->setObjectName(QStringLiteral("title"));
-    auto *subtitle = new QLabel(tr("STM32 MCSDK · 编码器位置环 · ASPEP/MCP"));
+    auto *subtitle = new QLabel(tr("STM32 MCSDK · ESP32 Wi-Fi gateway · MQTT"));
     subtitle->setObjectName(QStringLiteral("subtitle"));
     titles->addWidget(title);
     titles->addWidget(subtitle);
@@ -153,30 +149,28 @@ QWidget *MainWindow::createHeader()
     layout->addWidget(connectionDot_);
     layout->addWidget(connectionText_);
 
-    portCombo_ = new QComboBox;
-    portCombo_->setMinimumWidth(105);
-    baudCombo_ = new QComboBox;
-    baudCombo_->setEditable(true);
-    baudCombo_->setMinimumWidth(115);
-    const QList<quint32> baudRates = {
-        115200U, 230400U, 460800U, 921600U, 1000000U,
-        1500000U, 1843200U, 2000000U
-    };
-    for (quint32 baudRate : baudRates) {
-        baudCombo_->addItem(QString::number(baudRate), baudRate);
-    }
-    baudCombo_->setCurrentIndex(baudCombo_->findData(1843200U));
-    baudCombo_->setToolTip(tr("必须与 STM32 固件 USART2 波特率一致；当前工程默认 1,843,200"));
-    auto *refreshButton = new QPushButton(tr("刷新"));
+    QSettings settings;
+    brokerHostEdit_ = new QLineEdit;
+    brokerHostEdit_->setMinimumWidth(150);
+    brokerHostEdit_->setPlaceholderText(QStringLiteral("192.168.10.4"));
+    brokerHostEdit_->setText(
+        settings.value(QStringLiteral("mqtt/host"),
+                       QStringLiteral("192.168.10.4")).toString());
+    brokerHostEdit_->setToolTip(tr("Mosquitto broker IP address"));
+    brokerPortSpin_ = new QSpinBox;
+    brokerPortSpin_->setRange(1, 65535);
+    brokerPortSpin_->setValue(
+        settings.value(QStringLiteral("mqtt/port"), 1883).toInt());
+    brokerPortSpin_->setMinimumWidth(85);
+    brokerPortSpin_->setToolTip(tr("MQTT TCP port"));
     connectButton_ = new QPushButton(tr("连接"));
     connectButton_->setObjectName(QStringLiteral("primary"));
     layout->addSpacing(12);
-    layout->addWidget(portCombo_);
-    layout->addWidget(baudCombo_);
-    layout->addWidget(refreshButton);
+    layout->addWidget(new QLabel(tr("Broker")));
+    layout->addWidget(brokerHostEdit_);
+    layout->addWidget(brokerPortSpin_);
     layout->addWidget(connectButton_);
 
-    connect(refreshButton, &QPushButton::clicked, this, &MainWindow::refreshPorts);
     connect(connectButton_, &QPushButton::clicked, this, &MainWindow::toggleConnection);
     return panel;
 }
@@ -215,10 +209,10 @@ QWidget *MainWindow::createModeAndActions()
             this, &MainWindow::onModeChanged);
     connect(positionModeButton_, &QRadioButton::clicked,
             this, &MainWindow::onModeChanged);
-    connect(startButton, &QPushButton::clicked, &protocol_, &AspepProtocol::startMotor);
-    connect(stopButton, &QPushButton::clicked, &protocol_, &AspepProtocol::stopMotor);
+    connect(startButton, &QPushButton::clicked, &protocol_, &WirelessProtocol::startMotor);
+    connect(stopButton, &QPushButton::clicked, &protocol_, &WirelessProtocol::stopMotor);
     connect(faultButton, &QPushButton::clicked,
-            &protocol_, &AspepProtocol::acknowledgeFault);
+            &protocol_, &WirelessProtocol::acknowledgeFault);
     connect(zeroButton, &QPushButton::clicked, this, [this] {
         positionTargetSpin_->setValue(0.0);
         submitPositionTarget();
@@ -469,7 +463,7 @@ QWidget *MainWindow::createControlPanel()
     return panel;
 }
 
-QWidget *MainWindow::createSerialLogPanel()
+QWidget *MainWindow::createWirelessLogPanel()
 {
     auto *panel = new QFrame;
     panel->setObjectName(QStringLiteral("panel"));
@@ -477,7 +471,7 @@ QWidget *MainWindow::createSerialLogPanel()
     layout->setContentsMargins(15, 11, 15, 13);
 
     auto *header = new QHBoxLayout;
-    auto *heading = new QLabel(tr("串口输出 / 协议诊断"));
+    auto *heading = new QLabel(tr("MQTT / Wi-Fi diagnostic log"));
     heading->setStyleSheet(QStringLiteral("font-size:11pt;font-weight:700"));
     auto *clearButton = new QPushButton(tr("清空信息"));
     header->addWidget(heading);
@@ -485,21 +479,21 @@ QWidget *MainWindow::createSerialLogPanel()
     header->addWidget(clearButton);
     layout->addLayout(header);
 
-    serialLog_ = new QPlainTextEdit;
-    serialLog_->setReadOnly(true);
-    serialLog_->setMaximumBlockCount(2000);
-    serialLog_->setMinimumHeight(145);
-    serialLog_->setPlaceholderText(
-        tr("连接后将在这里显示串口参数、TX/RX 原始字节、ASPEP 握手和 MCP 响应。"));
-    serialLog_->setStyleSheet(QStringLiteral(
+    wirelessLog_ = new QPlainTextEdit;
+    wirelessLog_->setReadOnly(true);
+    wirelessLog_->setMaximumBlockCount(2000);
+    wirelessLog_->setMinimumHeight(145);
+    wirelessLog_->setPlaceholderText(
+        tr("MQTT connection, commands, acknowledgements and gateway errors appear here."));
+    wirelessLog_->setStyleSheet(QStringLiteral(
         "QPlainTextEdit {"
         " background:#080d14; color:#9fb4cc; border:1px solid #263950;"
         " border-radius:7px; padding:7px; font-family:Consolas,monospace;"
         " font-size:9pt;"
         "}"));
-    layout->addWidget(serialLog_);
+    layout->addWidget(wirelessLog_);
 
-    connect(clearButton, &QPushButton::clicked, serialLog_, &QPlainTextEdit::clear);
+    connect(clearButton, &QPushButton::clicked, wirelessLog_, &QPlainTextEdit::clear);
     return panel;
 }
 
@@ -527,55 +521,42 @@ QWidget *MainWindow::createValueCard(const QString &key, const QString &title,
     return card;
 }
 
-void MainWindow::refreshPorts()
-{
-    const QString previous = portCombo_->currentText();
-    portCombo_->clear();
-    portCombo_->addItems(AspepProtocol::availablePorts());
-    const int previousIndex = portCombo_->findText(previous);
-    if (previousIndex >= 0) {
-        portCombo_->setCurrentIndex(previousIndex);
-    }
-}
-
 void MainWindow::toggleConnection()
 {
-    if (protocol_.isPortOpen()) {
-        protocol_.disconnectPort();
+    if (protocol_.isBrokerOpen()) {
+        protocol_.disconnectBroker();
         return;
     }
 
-    if (portCombo_->currentText().isEmpty()) {
-        QMessageBox::information(this, tr("没有串口"), tr("未检测到可用串口，请连接设备后刷新。"));
+    const QString host = brokerHostEdit_->text().trimmed();
+    if (host.isEmpty()) {
+        QMessageBox::information(
+            this, tr("Missing broker"),
+            tr("Enter the Mosquitto broker IP address."));
         return;
     }
-    bool baudOk = false;
-    const quint32 baudRate = baudCombo_->currentText().toUInt(&baudOk);
-    if (!baudOk || baudRate == 0U) {
-        QMessageBox::warning(this, tr("波特率错误"), tr("请输入有效的正整数波特率。"));
-        return;
-    }
-    protocol_.connectPort(portCombo_->currentText(), baudRate);
+    QSettings settings;
+    settings.setValue(QStringLiteral("mqtt/host"), host);
+    settings.setValue(QStringLiteral("mqtt/port"), brokerPortSpin_->value());
+    protocol_.connectBroker(host,
+                            static_cast<quint16>(brokerPortSpin_->value()));
 }
 
 void MainWindow::onConnectionChanged(bool connected, const QString &status)
 {
     if (connected) {
         connectionDot_->setStyleSheet(QStringLiteral("color:#40dda4;font-size:14pt"));
-    } else if (protocol_.isPortOpen()) {
+    } else if (protocol_.isBrokerConnected()) {
         connectionDot_->setStyleSheet(QStringLiteral("color:#ffb454;font-size:14pt"));
     } else {
         connectionDot_->setStyleSheet(QStringLiteral("color:#566579;font-size:14pt"));
     }
     connectionText_->setText(status);
-    connectButton_->setText(protocol_.isPortOpen() ? tr("断开") : tr("连接"));
-    portCombo_->setEnabled(!protocol_.isPortOpen());
-    baudCombo_->setEnabled(!protocol_.isPortOpen());
+    connectButton_->setText(protocol_.isBrokerOpen() ? tr("断开") : tr("连接"));
+    brokerHostEdit_->setEnabled(!protocol_.isBrokerOpen());
+    brokerPortSpin_->setEnabled(!protocol_.isBrokerOpen());
     setControlsEnabled(connected);
-    if (connected) {
-        telemetryTimer_->start();
-    } else {
-        telemetryTimer_->stop();
+    if (!connected) {
         updateFaultIndicators(0U, 0U);
         speedTargetLocallySet_ = false;
         positionTargetLocallySet_ = false;
@@ -627,15 +608,15 @@ void MainWindow::onTelemetry(const FocTelemetry &telemetry)
 void MainWindow::onProtocolError(const QString &message)
 {
     statusBar()->showMessage(message, 5000);
-    appendSerialLog(tr("错误：%1").arg(message));
+    appendWirelessLog(tr("错误：%1").arg(message));
 }
 
-void MainWindow::appendSerialLog(const QString &message)
+void MainWindow::appendWirelessLog(const QString &message)
 {
-    if (serialLog_ == nullptr) {
+    if (wirelessLog_ == nullptr) {
         return;
     }
-    serialLog_->appendPlainText(
+    wirelessLog_->appendPlainText(
         QStringLiteral("[%1] %2")
             .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss.zzz")),
                  message));
@@ -686,7 +667,7 @@ void MainWindow::submitSpeedTarget()
     const int rpm = speedSpin_->value();
     const quint32 durationMs = qRound(speedDurationSpin_->value() * 1000.0);
     protocol_.setSpeedRpm(static_cast<qint16>(rpm), durationMs);
-    appendSerialLog(tr("提交速度目标：%1 RPM（%2 s）")
+    appendWirelessLog(tr("提交速度目标：%1 RPM（%2 s）")
                         .arg(rpm)
                         .arg(speedDurationSpin_->value(), 0, 'f', 2));
 }
@@ -728,7 +709,7 @@ void MainWindow::submitPositionTarget()
     const double multiTurnTarget = nearestMultiTurnTarget(degree, currentMultiTurnDegree_);
     const quint32 durationMs = qRound(positionDurationSpin_->value() * 1000.0);
     protocol_.setPositionCdeg(qRound(multiTurnTarget * 100.0), durationMs);
-    appendSerialLog(tr("提交位置目标：%1°（多圈目标 %2°，%3 s）")
+    appendWirelessLog(tr("提交位置目标：%1°（多圈目标 %2°，%3 s）")
                         .arg(degree, 0, 'f', 2)
                         .arg(multiTurnTarget, 0, 'f', 2)
                         .arg(positionDurationSpin_->value(), 0, 'f', 2));

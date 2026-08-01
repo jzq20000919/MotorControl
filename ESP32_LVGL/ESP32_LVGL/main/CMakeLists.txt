@@ -8,6 +8,7 @@ idf_component_register(
         "motor_ui.c"
         "wifi_manager.c"
         "mqtt_manager.c"
+        "mqtt_motor_gateway.c"
 
     INCLUDE_DIRS
         "."

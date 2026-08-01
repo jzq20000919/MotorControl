@@ -44,6 +44,8 @@ typedef struct
     int16_t id_ma;
     int16_t iq_reference_ma;
     int16_t id_reference_ma;
+    int16_t uq_mv;
+    int16_t ud_mv;
     uint32_t received_frames;
     uint32_t transmitted_frames;
     uint32_t transmit_errors;
@@ -62,5 +64,6 @@ void motor_link_set_position_cdeg(uint16_t position_cdeg);
 void motor_link_start_motor(void);
 void motor_link_stop_motor(void);
 void motor_link_acknowledge_fault(void);
+void motor_link_zero_position(void);
 
 #endif /* MOTOR_LINK_H */
