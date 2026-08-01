@@ -1,0 +1,26 @@
+* text=auto
+
+# Keep source and project metadata consistent across Windows and CI systems.
+*.c text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.s text eol=lf
+*.S text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.ioc text eol=lf
+*.uvprojx text eol=lf
+*.uvoptx text eol=lf
+
+# Hardware documents, images and prebuilt CMSIS libraries are binary assets.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.a binary
+*.lib binary

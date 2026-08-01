@@ -1,0 +1,50 @@
+# This archive intentionally contains only the current STM32 and ESP32 projects.
+/*
+!/.gitignore
+!/.gitattributes
+!/MCSDK_FOC_MIX/
+!/ESP32_LVGL/
+
+# Only the active ESP-IDF application is part of this archive.
+/ESP32_LVGL/*
+!/ESP32_LVGL/ESP32_LVGL/
+
+# Common editor and operating-system files.
+**/.DS_Store
+**/Thumbs.db
+**/Desktop.ini
+**/.vscode/
+**/.idea/
+**/*.swp
+**/*.swo
+**/*~
+
+# Generic generated build directories.
+**/build/
+**/build_*/
+**/cmake-build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/compile_commands.json
+
+# STM32CubeMX / Motor Control Workbench temporary and backup files.
+/MCSDK_FOC_MIX/*.bak
+/MCSDK_FOC_MIX/*.ioc.wb
+/MCSDK_FOC_MIX/.extSettings
+
+# Keil user state, logs, listings and generated target output.
+/MCSDK_FOC_MIX/MDK-ARM/MCSDK_FOC_MIX/
+/MCSDK_FOC_MIX/MDK-ARM/*.uvguix.*
+/MCSDK_FOC_MIX/MDK-ARM/*.log
+/MCSDK_FOC_MIX/MDK-ARM/*.lst
+/MCSDK_FOC_MIX/MDK-ARM/*.map
+/MCSDK_FOC_MIX/MDK-ARM/*.htm
+/MCSDK_FOC_MIX/MDK-ARM/*.hex
+/MCSDK_FOC_MIX/MDK-ARM/*.axf
+/MCSDK_FOC_MIX/MDK-ARM/*.lnp
+/MCSDK_FOC_MIX/MDK-ARM/*.dep
+
+# Qt generated user and build state.
+/MCSDK_FOC_MIX/QtFocMixControl/*.user
+/MCSDK_FOC_MIX/QtFocMixControl/.qtc_clangd/
