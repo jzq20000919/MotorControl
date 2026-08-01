@@ -95,9 +95,9 @@ static const char *TAG = "MOTOR_HMI";
 /* LCD 背光连接 XL9555 P0_7 */
 #define XL9555_LCD_BL_MASK     (1U << 7)
 #define XL9555_TOUCH_RST_MASK  (1U << 6)
-#define XL9555_KEY0_MASK       (1U << 7) /* P1.7, active low */
-#define XL9555_KEY1_MASK       (1U << 6) /* P1.6, active low */
-#define BOARD_BOOT_KEY_GPIO    GPIO_NUM_0
+#define XL9555_KEY0_MASK       (1U << 4) /* P0.4, active low */
+#define XL9555_KEY1_MASK       (1U << 3) /* P0.3, active low */
+#define BOARD_KEY0_GPIO        GPIO_NUM_0 /* BOOT key, active low */
 
 /* ============================================================
  * 全局句柄
@@ -301,13 +301,13 @@ void board_keys_init(void)
     uint8_t config_values[2];
     ESP_ERROR_CHECK(
         xl9555_read_pair(XL9555_CONFIG_PORT0, config_values));
-    config_values[1] |=
+    config_values[0] |=
         XL9555_KEY0_MASK | XL9555_KEY1_MASK;
     ESP_ERROR_CHECK(
         xl9555_write_pair(XL9555_CONFIG_PORT0, config_values));
 
     const gpio_config_t boot_key_config = {
-        .pin_bit_mask = 1ULL << BOARD_BOOT_KEY_GPIO,
+        .pin_bit_mask = 1ULL << BOARD_KEY0_GPIO,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -323,15 +323,16 @@ uint8_t board_keys_read(void)
 
     if (xl9555_read_pair(
             XL9555_INPUT_PORT0, input_values) == ESP_OK) {
-        if ((input_values[1] & XL9555_KEY0_MASK) == 0U) {
-            keys |= BOARD_KEY_K0;
-        }
-        if ((input_values[1] & XL9555_KEY1_MASK) == 0U) {
+        /* Physical KEY0 and KEY1 act as logical K1 and K2. */
+        if ((input_values[0] & XL9555_KEY0_MASK) == 0U) {
             keys |= BOARD_KEY_K1;
         }
+        if ((input_values[0] & XL9555_KEY1_MASK) == 0U) {
+            keys |= BOARD_KEY_K2;
+        }
     }
-    if (gpio_get_level(BOARD_BOOT_KEY_GPIO) == 0) {
-        keys |= BOARD_KEY_K2;
+    if (gpio_get_level(BOARD_KEY0_GPIO) == 0) {
+        keys |= BOARD_KEY_K0;
     }
     return keys;
 }

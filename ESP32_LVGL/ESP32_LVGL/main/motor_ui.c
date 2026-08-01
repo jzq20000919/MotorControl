@@ -131,7 +131,6 @@ static uint8_t s_key_stable;
 static uint8_t s_key_debounce_count;
 static lv_point_t s_swipe_start;
 static bool s_swipe_tracking;
-static bool s_swipe_blocked;
 static bool s_page_animating;
 static uint32_t s_wifi_revision = UINT32_MAX;
 static uint32_t s_wifi_scan_generation = UINT32_MAX;
@@ -317,46 +316,19 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     lv_anim_start(&animation);
 }
 
-static void ui_page_label_event(lv_event_t *event)
-{
-    (void)event;
-    ui_animate_to_page(
-        (ui_page_t)((s_current_page + 1U) % UI_PAGE_COUNT), true);
-}
-
-static bool ui_is_control_object(lv_obj_t *object)
-{
-    while (object != NULL) {
-        bool is_page = false;
-        for (int i = 0; i < UI_PAGE_COUNT; i++) {
-            if (object == s_pages[i]) {
-                is_page = true;
-                break;
-            }
-        }
-        if (!is_page && object != lv_screen_active() &&
-            lv_obj_has_flag(object, LV_OBJ_FLAG_CLICKABLE)) {
-            return true;
-        }
-        object = lv_obj_get_parent(object);
-    }
-    return false;
-}
-
 static void ui_input_event(lv_event_t *event)
 {
     lv_indev_t *indev = lv_event_get_user_data(event);
     const lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *active_object = lv_event_get_param(event);
     lv_point_t point;
 
     if (indev == NULL) {
         return;
     }
 
-    if (code == LV_EVENT_PRESSED) {
+    if (code == LV_EVENT_PRESSED &&
+        s_current_page == UI_PAGE_SPEED_CHART) {
         lv_indev_get_point(indev, &s_swipe_start);
-        s_swipe_blocked = ui_is_control_object(active_object);
         s_swipe_tracking = true;
         return;
     }
@@ -366,7 +338,7 @@ static void ui_input_event(lv_event_t *event)
     }
 
     s_swipe_tracking = false;
-    if (s_swipe_blocked) {
+    if (s_current_page != UI_PAGE_SPEED_CHART) {
         return;
     }
 
@@ -378,15 +350,17 @@ static void ui_input_event(lv_event_t *event)
         return;
     }
 
-    if (delta_y < 0) {
-        ui_animate_to_page(
-            (ui_page_t)((s_current_page + 1U) % UI_PAGE_COUNT), true);
-    } else {
-        ui_animate_to_page(
-            (ui_page_t)(
-                (s_current_page + UI_PAGE_COUNT - 1U) %
-                UI_PAGE_COUNT), false);
-    }
+    motor_link_snapshot_t snapshot;
+    motor_link_get_snapshot(&snapshot);
+    const int32_t current_reference = s_speed_command_pending
+        ? s_pending_speed_rpm
+        : snapshot.reference_speed_rpm;
+    s_pending_speed_rpm = ui_clamp_speed(
+        current_reference + (delta_y < 0 ? 100 : -100));
+    s_speed_command_pending = true;
+    s_speed_command_tick = lv_tick_get();
+    motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
+    motor_link_set_speed_rpm(s_pending_speed_rpm);
 }
 
 static void ui_speed_mode_event(lv_event_t *event)
@@ -797,12 +771,11 @@ static lv_obj_t *ui_create_navigation_button(
     lv_obj_t *parent,
     const char *text,
     ui_page_t page,
-    int32_t x,
     int32_t y)
 {
     lv_obj_t *button = lv_button_create(parent);
-    lv_obj_set_size(button, 94, 34);
-    lv_obj_set_pos(button, x, y);
+    lv_obj_set_size(button, 280, 38);
+    lv_obj_set_pos(button, 4, y);
     lv_obj_set_style_radius(button, 10, LV_PART_MAIN);
     lv_obj_set_style_bg_color(
         button, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
@@ -819,26 +792,37 @@ static void ui_create_home_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
         parent, "MOTOR CONTROL", UI_COLOR_TEXT, &lv_font_montserrat_20);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
-
-    ui_create_navigation_button(parent, "USART", UI_PAGE_UART, 9, 40);
-    ui_create_navigation_button(parent, "CAN", UI_PAGE_CAN, 113, 40);
-    ui_create_navigation_button(parent, "WI-FI", UI_PAGE_WIFI, 217, 40);
-    ui_create_navigation_button(parent, "MQTT", UI_PAGE_MQTT, 9, 80);
-    ui_create_navigation_button(parent, "SPEED", UI_PAGE_SPEED, 113, 80);
-    ui_create_navigation_button(parent, "POSITION", UI_PAGE_POSITION, 217, 80);
-    ui_create_navigation_button(
-        parent, "SPEED CURVE", UI_PAGE_SPEED_CHART, 61, 120);
-    ui_create_navigation_button(
-        parent, "CURRENT", UI_PAGE_CURRENT_CHART, 165, 120);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
 
     s_active_transport_label = ui_create_label(
         parent, "ACTIVE: NONE", UI_COLOR_MUTED, &lv_font_montserrat_14);
-    lv_obj_align(s_active_transport_label, LV_ALIGN_BOTTOM_MID, 0, -25);
-    lv_obj_t *hint = ui_create_label(
-        parent, "Swipe up/down or select a page", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -6);
+    lv_obj_align(s_active_transport_label, LV_ALIGN_TOP_MID, 0, 28);
+
+    lv_obj_t *list = lv_obj_create(parent);
+    lv_obj_set_size(list, 304, 160);
+    lv_obj_set_pos(list, 8, 54);
+    lv_obj_set_style_bg_color(
+        list, lv_color_hex(UI_COLOR_PANEL), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(
+        list, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
+    lv_obj_set_style_border_width(list, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(list, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(list, 6, LV_PART_MAIN);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+
+    ui_create_navigation_button(list, "USART", UI_PAGE_UART, 4);
+    ui_create_navigation_button(list, "CAN", UI_PAGE_CAN, 48);
+    ui_create_navigation_button(list, "WI-FI", UI_PAGE_WIFI, 92);
+    ui_create_navigation_button(list, "MQTT", UI_PAGE_MQTT, 136);
+    ui_create_navigation_button(list, "SPEED", UI_PAGE_SPEED, 180);
+    ui_create_navigation_button(list, "POSITION", UI_PAGE_POSITION, 224);
+    ui_create_navigation_button(
+        list, "SPEED CURVE", UI_PAGE_SPEED_CHART, 268);
+    ui_create_navigation_button(
+        list, "CURRENT CURVE", UI_PAGE_CURRENT_CHART, 312);
 }
 
 static void ui_create_uart_page(lv_obj_t *parent)
@@ -1355,7 +1339,7 @@ static void ui_create_speed_chart_page(lv_obj_t *parent)
     lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
     lv_obj_t *keys_label = ui_create_label(
         parent,
-        "K0 RUN/STOP  K1 +100  K2 -100",
+        "SWIPE UP +100 / DOWN -100 RPM",
         UI_COLOR_MUTED,
         &lv_font_montserrat_12);
     lv_obj_align(keys_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
@@ -1411,12 +1395,12 @@ static void ui_create_current_chart_page(lv_obj_t *parent)
     lv_obj_t *time_label = ui_create_label(
         parent, "TIME 2 s", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
-    lv_obj_t *keys_label = ui_create_label(
+    lv_obj_t *display_label = ui_create_label(
         parent,
-        "K0 RUN/STOP  K1 +100  K2 -100",
+        "DISPLAY ONLY",
         UI_COLOR_MUTED,
         &lv_font_montserrat_12);
-    lv_obj_align(keys_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
+    lv_obj_align(display_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 }
 
 static int32_t ui_select_current_scale(
@@ -1540,50 +1524,41 @@ static void ui_update_charts(const motor_link_snapshot_t *snapshot)
         snapshot->iq_ma);
 }
 
-static void ui_handle_keys(const motor_link_snapshot_t *snapshot)
+static void ui_handle_keys(void)
 {
     const uint8_t raw = board_keys_read();
     if (raw != s_key_candidate) {
         s_key_candidate = raw;
+        s_key_debounce_count = 1U;
+        return;
+    }
+    if (s_key_candidate == s_key_stable) {
         s_key_debounce_count = 0U;
         return;
     }
     if (s_key_debounce_count < 2U) {
         s_key_debounce_count++;
-        return;
-    }
-    if (s_key_stable == s_key_candidate) {
-        return;
+        if (s_key_debounce_count < 2U) {
+            return;
+        }
     }
 
     const uint8_t pressed =
         s_key_candidate & (uint8_t)~s_key_stable;
     s_key_stable = s_key_candidate;
 
-    if (s_current_page != UI_PAGE_SPEED_CHART &&
-        s_current_page != UI_PAGE_CURRENT_CHART) {
-        return;
-    }
-
     if ((pressed & BOARD_KEY_K0) != 0U) {
-        if (snapshot->motor_running) {
-            motor_link_stop_motor();
-        } else {
-            motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-            motor_link_start_motor();
-        }
-    }
-    if ((pressed & BOARD_KEY_K1) != 0U) {
-        motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-        motor_link_set_speed_rpm(
-            ui_clamp_speed(
-                (int32_t)snapshot->reference_speed_rpm + 100));
-    }
-    if ((pressed & BOARD_KEY_K2) != 0U) {
-        motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-        motor_link_set_speed_rpm(
-            ui_clamp_speed(
-                (int32_t)snapshot->reference_speed_rpm - 100));
+        ui_animate_to_page(UI_PAGE_HOME, false);
+    } else if ((pressed & BOARD_KEY_K1) != 0U) {
+        ui_animate_to_page(
+            (ui_page_t)(
+                (s_current_page + UI_PAGE_COUNT - 1U) %
+                UI_PAGE_COUNT),
+            false);
+    } else if ((pressed & BOARD_KEY_K2) != 0U) {
+        ui_animate_to_page(
+            (ui_page_t)((s_current_page + 1U) % UI_PAGE_COUNT),
+            true);
     }
 }
 
@@ -1752,7 +1727,6 @@ static void ui_update_motor_data(void)
     }
 
     ui_update_charts(&snapshot);
-    ui_handle_keys(&snapshot);
     s_previous_snapshot = snapshot;
     s_have_previous_snapshot = true;
 }
@@ -1863,6 +1837,12 @@ static void ui_timer_callback(lv_timer_t *timer)
     ui_update_mqtt_data();
 }
 
+static void ui_key_timer_callback(lv_timer_t *timer)
+{
+    (void)timer;
+    ui_handle_keys();
+}
+
 void motor_ui_create(lv_display_t *display)
 {
     if (display == NULL) {
@@ -1883,12 +1863,6 @@ void motor_ui_create(lv_display_t *display)
     s_page_label = ui_create_label(
         screen, s_page_names[0], UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_page_label, LV_ALIGN_TOP_LEFT, 6, 5);
-    lv_obj_add_flag(s_page_label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(
-        s_page_label,
-        ui_page_label_event,
-        LV_EVENT_CLICKED,
-        NULL);
 
     s_mqtt_status_label = ui_create_label(
         screen, "MQTT", UI_COLOR_RED, &lv_font_montserrat_12);
@@ -1945,6 +1919,7 @@ void motor_ui_create(lv_display_t *display)
     lv_obj_move_foreground(s_wifi_status_label);
     lv_obj_move_foreground(s_mqtt_status_label);
     lv_timer_create(ui_timer_callback, 50, NULL);
+    lv_timer_create(ui_key_timer_callback, 20, NULL);
     ui_update_motor_data();
     ui_update_wifi_data();
     ui_update_mqtt_data();
