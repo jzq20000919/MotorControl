@@ -6,6 +6,7 @@ idf_component_register(
         "motor_can.c"
         "motor_link.c"
         "motor_ui.c"
+        "wifi_manager.c"
 
     INCLUDE_DIRS
         "."
@@ -16,7 +17,11 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_uart
         esp_driver_twai
+        esp_event
+        esp_netif
+        esp_wifi
         esp_timer
         esp_lvgl_port
         lvgl
+        nvs_flash
 )

@@ -1,11 +1,14 @@
 #include "motor_ui.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include "board_keys.h"
 #include "motor_link.h"
+#include "wifi_manager.h"
 
 #define UI_COLOR_BACKGROUND       0x08111FU
 #define UI_COLOR_PANEL            0x111D2EU
@@ -30,6 +33,7 @@ typedef enum
     UI_PAGE_HOME = 0,
     UI_PAGE_UART,
     UI_PAGE_CAN,
+    UI_PAGE_WIFI,
     UI_PAGE_SPEED,
     UI_PAGE_POSITION,
     UI_PAGE_SPEED_CHART,
@@ -41,6 +45,7 @@ static const char *s_page_names[UI_PAGE_COUNT] = {
     "HOME",
     "USART",
     "CAN",
+    "WI-FI",
     "SPEED",
     "POSITION",
     "SPEED CURVE",
@@ -52,6 +57,7 @@ static ui_page_t s_current_page;
 static lv_obj_t *s_page_label;
 static lv_obj_t *s_uart_status_label;
 static lv_obj_t *s_can_status_label;
+static lv_obj_t *s_wifi_status_label;
 static lv_obj_t *s_active_transport_label;
 static lv_obj_t *s_home_state_label;
 static lv_obj_t *s_can_state_label;
@@ -61,6 +67,11 @@ static lv_obj_t *s_reconnect_button;
 static lv_obj_t *s_uart_disconnect_button;
 static lv_obj_t *s_can_connect_button;
 static lv_obj_t *s_can_disconnect_button;
+static lv_obj_t *s_wifi_network_dropdown;
+static lv_obj_t *s_wifi_password_textarea;
+static lv_obj_t *s_wifi_page_state_label;
+static lv_obj_t *s_wifi_detail_label;
+static lv_obj_t *s_wifi_keyboard;
 static lv_obj_t *s_stop_button;
 static lv_obj_t *s_speed_stop_button;
 static lv_obj_t *s_position_stop_button;
@@ -114,6 +125,12 @@ static lv_point_t s_swipe_start;
 static bool s_swipe_tracking;
 static bool s_swipe_blocked;
 static bool s_page_animating;
+static uint32_t s_wifi_revision = UINT32_MAX;
+static uint32_t s_wifi_scan_generation = UINT32_MAX;
+static uint16_t s_wifi_network_count;
+static bool s_wifi_network_secured[WIFI_MANAGER_MAX_APS];
+static char s_wifi_network_ssids[WIFI_MANAGER_MAX_APS]
+                                  [WIFI_MANAGER_SSID_MAX_LEN + 1U];
 
 static const uint32_t s_uart_baud_rates[] = {
     115200U, 230400U, 460800U, 921600U, 1000000U,
@@ -163,10 +180,22 @@ static int16_t ui_clamp_speed(int32_t speed)
     return (int16_t)speed;
 }
 
+static void ui_hide_wifi_keyboard(void)
+{
+    if (s_wifi_keyboard != NULL) {
+        lv_keyboard_set_textarea(s_wifi_keyboard, NULL);
+        lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void ui_show_page(ui_page_t page)
 {
     if (page >= UI_PAGE_COUNT) {
         return;
+    }
+
+    if (page != UI_PAGE_WIFI) {
+        ui_hide_wifi_keyboard();
     }
 
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
@@ -214,6 +243,10 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     if (page >= UI_PAGE_COUNT || page == s_current_page ||
         s_page_animating) {
         return;
+    }
+
+    if (page != UI_PAGE_WIFI) {
+        ui_hide_wifi_keyboard();
     }
 
     lv_obj_t *outgoing = s_pages[s_current_page];
@@ -413,6 +446,125 @@ static void ui_can_disconnect_event(lv_event_t *event)
     lv_label_set_text(s_can_state_label, "CAN DISCONNECTED");
 }
 
+static void ui_wifi_update_selected_detail(void)
+{
+    if (s_wifi_detail_label == NULL) {
+        return;
+    }
+    if (s_wifi_network_count == 0U) {
+        lv_label_set_text(s_wifi_detail_label, "No network selected");
+        return;
+    }
+
+    uint16_t selected =
+        lv_dropdown_get_selected(s_wifi_network_dropdown);
+    if (selected >= s_wifi_network_count) {
+        selected = 0U;
+    }
+
+    wifi_manager_snapshot_t snapshot;
+    wifi_manager_get_snapshot(&snapshot);
+    int rssi = 0;
+    if (selected < snapshot.ap_count &&
+        strcmp(
+            snapshot.aps[selected].ssid,
+            s_wifi_network_ssids[selected]) == 0) {
+        rssi = snapshot.aps[selected].rssi;
+    }
+    lv_label_set_text_fmt(
+        s_wifi_detail_label,
+        "%s\n%d dBm  %s",
+        s_wifi_network_ssids[selected],
+        rssi,
+        s_wifi_network_secured[selected] ? "SECURED" : "OPEN");
+}
+
+static void ui_wifi_network_event(lv_event_t *event)
+{
+    (void)event;
+    ui_wifi_update_selected_detail();
+}
+
+static void ui_wifi_password_event(lv_event_t *event)
+{
+    (void)event;
+    lv_keyboard_set_textarea(
+        s_wifi_keyboard,
+        s_wifi_password_textarea);
+    lv_obj_remove_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_wifi_keyboard);
+}
+
+static void ui_wifi_keyboard_event(lv_event_t *event)
+{
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
+        ui_hide_wifi_keyboard();
+    }
+}
+
+static void ui_wifi_scan_event(lv_event_t *event)
+{
+    (void)event;
+    const esp_err_t result = wifi_manager_scan_async();
+    if (result != ESP_OK) {
+        lv_label_set_text_fmt(
+            s_wifi_page_state_label,
+            "Scan unavailable: %s",
+            esp_err_to_name(result));
+    }
+}
+
+static void ui_wifi_connect_event(lv_event_t *event)
+{
+    (void)event;
+    if (s_wifi_network_count == 0U) {
+        lv_label_set_text(s_wifi_page_state_label, "Scan and select a network");
+        return;
+    }
+
+    uint16_t selected =
+        lv_dropdown_get_selected(s_wifi_network_dropdown);
+    if (selected >= s_wifi_network_count) {
+        selected = 0U;
+    }
+    const char *password =
+        lv_textarea_get_text(s_wifi_password_textarea);
+    if (s_wifi_network_secured[selected] && strlen(password) < 8U) {
+        lv_label_set_text(
+            s_wifi_page_state_label,
+            "Secure network password must be 8+ characters");
+        return;
+    }
+    if (!s_wifi_network_secured[selected]) {
+        password = "";
+    }
+
+    ui_hide_wifi_keyboard();
+    const esp_err_t result = wifi_manager_connect(
+        s_wifi_network_ssids[selected],
+        password);
+    if (result != ESP_OK) {
+        lv_label_set_text_fmt(
+            s_wifi_page_state_label,
+            "Connect unavailable: %s",
+            esp_err_to_name(result));
+    }
+}
+
+static void ui_wifi_disconnect_event(lv_event_t *event)
+{
+    (void)event;
+    ui_hide_wifi_keyboard();
+    const esp_err_t result = wifi_manager_disconnect();
+    if (result != ESP_OK) {
+        lv_label_set_text_fmt(
+            s_wifi_page_state_label,
+            "Disconnect failed: %s",
+            esp_err_to_name(result));
+    }
+}
+
 static void ui_navigation_event(lv_event_t *event)
 {
     const ui_page_t page =
@@ -521,7 +673,7 @@ static lv_obj_t *ui_create_navigation_button(
     int32_t y)
 {
     lv_obj_t *button = lv_button_create(parent);
-    lv_obj_set_size(button, 94, 40);
+    lv_obj_set_size(button, 94, 34);
     lv_obj_set_pos(button, x, y);
     lv_obj_set_style_radius(button, 10, LV_PART_MAIN);
     lv_obj_set_style_bg_color(
@@ -539,14 +691,17 @@ static void ui_create_home_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
         parent, "MOTOR CONTROL", UI_COLOR_TEXT, &lv_font_montserrat_20);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
 
-    ui_create_navigation_button(parent, "USART", UI_PAGE_UART, 9, 52);
-    ui_create_navigation_button(parent, "CAN", UI_PAGE_CAN, 113, 52);
-    ui_create_navigation_button(parent, "SPEED", UI_PAGE_SPEED, 217, 52);
-    ui_create_navigation_button(parent, "POSITION", UI_PAGE_POSITION, 9, 102);
-    ui_create_navigation_button(parent, "SPEED CURVE", UI_PAGE_SPEED_CHART, 113, 102);
-    ui_create_navigation_button(parent, "CURRENT", UI_PAGE_CURRENT_CHART, 217, 102);
+    ui_create_navigation_button(parent, "USART", UI_PAGE_UART, 9, 40);
+    ui_create_navigation_button(parent, "CAN", UI_PAGE_CAN, 113, 40);
+    ui_create_navigation_button(parent, "WI-FI", UI_PAGE_WIFI, 217, 40);
+    ui_create_navigation_button(parent, "SPEED", UI_PAGE_SPEED, 9, 80);
+    ui_create_navigation_button(parent, "POSITION", UI_PAGE_POSITION, 113, 80);
+    ui_create_navigation_button(
+        parent, "SPEED CURVE", UI_PAGE_SPEED_CHART, 217, 80);
+    ui_create_navigation_button(
+        parent, "CURRENT", UI_PAGE_CURRENT_CHART, 113, 120);
 
     s_active_transport_label = ui_create_label(
         parent, "ACTIVE: NONE", UI_COLOR_MUTED, &lv_font_montserrat_14);
@@ -670,6 +825,116 @@ static void ui_create_can_page(lv_obj_t *parent)
         parent, "Connecting selects CAN as the active control transport.",
         UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_can_state_label, LV_ALIGN_BOTTOM_MID, 0, -24);
+}
+
+static lv_obj_t *ui_create_wifi_action_button(
+    lv_obj_t *parent,
+    const char *text,
+    uint32_t color,
+    int32_t x,
+    int32_t y,
+    lv_event_cb_t callback)
+{
+    lv_obj_t *button = lv_button_create(parent);
+    lv_obj_set_size(button, 92, 34);
+    lv_obj_set_pos(button, x, y);
+    lv_obj_set_style_radius(button, 10, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        button, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = ui_create_label(
+        button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
+    lv_obj_center(label);
+    return button;
+}
+
+static void ui_create_wifi_page(lv_obj_t *parent)
+{
+    lv_obj_t *title = ui_create_label(
+        parent, "WI-FI NETWORK", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_set_pos(title, 8, 4);
+
+    s_wifi_network_dropdown = lv_dropdown_create(parent);
+    lv_dropdown_set_options(s_wifi_network_dropdown, "No networks - tap SCAN");
+    lv_obj_set_size(s_wifi_network_dropdown, 210, 34);
+    lv_obj_set_pos(s_wifi_network_dropdown, 8, 34);
+    lv_obj_set_style_bg_color(
+        s_wifi_network_dropdown,
+        lv_color_hex(UI_COLOR_PANEL_LIGHT),
+        LV_PART_MAIN);
+    lv_obj_set_style_text_color(
+        s_wifi_network_dropdown,
+        lv_color_hex(UI_COLOR_TEXT),
+        LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        s_wifi_network_dropdown,
+        ui_wifi_network_event,
+        LV_EVENT_VALUE_CHANGED,
+        NULL);
+
+    ui_create_wifi_action_button(
+        parent, "SCAN", UI_COLOR_CYAN, 220, 34, ui_wifi_scan_event);
+
+    s_wifi_password_textarea = lv_textarea_create(parent);
+    lv_obj_set_size(s_wifi_password_textarea, 204, 34);
+    lv_obj_set_pos(s_wifi_password_textarea, 8, 76);
+    lv_textarea_set_one_line(s_wifi_password_textarea, true);
+    lv_textarea_set_password_mode(s_wifi_password_textarea, true);
+    lv_textarea_set_max_length(s_wifi_password_textarea, 63U);
+    lv_textarea_set_placeholder_text(
+        s_wifi_password_textarea,
+        "Wi-Fi password");
+    lv_obj_set_style_bg_color(
+        s_wifi_password_textarea,
+        lv_color_hex(UI_COLOR_PANEL),
+        LV_PART_MAIN);
+    lv_obj_set_style_text_color(
+        s_wifi_password_textarea,
+        lv_color_hex(UI_COLOR_TEXT),
+        LV_PART_MAIN);
+    lv_obj_set_style_border_color(
+        s_wifi_password_textarea,
+        lv_color_hex(UI_COLOR_PANEL_LIGHT),
+        LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        s_wifi_password_textarea,
+        ui_wifi_password_event,
+        LV_EVENT_CLICKED,
+        NULL);
+
+    ui_create_wifi_action_button(
+        parent, "CONNECT", UI_COLOR_BLUE, 220, 76,
+        ui_wifi_connect_event);
+    ui_create_wifi_action_button(
+        parent, "DISCONNECT", UI_COLOR_RED, 220, 118,
+        ui_wifi_disconnect_event);
+
+    s_wifi_detail_label = ui_create_label(
+        parent, "No network selected", UI_COLOR_MUTED,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_wifi_detail_label, 10, 120);
+    lv_obj_set_width(s_wifi_detail_label, 202);
+    lv_label_set_long_mode(s_wifi_detail_label, LV_LABEL_LONG_DOT);
+
+    s_wifi_page_state_label = ui_create_label(
+        parent, "Initializing Wi-Fi", UI_COLOR_MUTED,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_wifi_page_state_label, 10, 165);
+    lv_obj_set_width(s_wifi_page_state_label, 300);
+    lv_label_set_long_mode(s_wifi_page_state_label, LV_LABEL_LONG_WRAP);
+
+    s_wifi_keyboard = lv_keyboard_create(lv_screen_active());
+    lv_obj_set_size(s_wifi_keyboard, 320, 160);
+    lv_obj_align(s_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_mode(s_wifi_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
+    lv_obj_set_style_bg_color(
+        s_wifi_keyboard, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
+    lv_obj_add_event_cb(
+        s_wifi_keyboard,
+        ui_wifi_keyboard_event,
+        LV_EVENT_ALL,
+        NULL);
+    lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void ui_create_speed_page(lv_obj_t *parent)
@@ -1281,10 +1546,77 @@ static void ui_update_motor_data(void)
     s_have_previous_snapshot = true;
 }
 
+static void ui_update_wifi_data(void)
+{
+    wifi_manager_snapshot_t snapshot;
+    wifi_manager_get_snapshot(&snapshot);
+
+    if (snapshot.scan_generation != s_wifi_scan_generation) {
+        char options[WIFI_MANAGER_MAX_APS * 48U];
+        size_t used = 0U;
+        options[0] = '\0';
+        s_wifi_network_count = snapshot.ap_count;
+        if (s_wifi_network_count > WIFI_MANAGER_MAX_APS) {
+            s_wifi_network_count = WIFI_MANAGER_MAX_APS;
+        }
+
+        for (uint16_t i = 0U; i < s_wifi_network_count; i++) {
+            strlcpy(
+                s_wifi_network_ssids[i],
+                snapshot.aps[i].ssid,
+                sizeof(s_wifi_network_ssids[i]));
+            s_wifi_network_secured[i] = snapshot.aps[i].secured;
+            const int written = snprintf(
+                options + used,
+                sizeof(options) - used,
+                "%s%s  %d dBm%s",
+                i == 0U ? "" : "\n",
+                snapshot.aps[i].ssid,
+                snapshot.aps[i].rssi,
+                snapshot.aps[i].secured ? "  *" : "");
+            if (written < 0 || (size_t)written >= sizeof(options) - used) {
+                break;
+            }
+            used += (size_t)written;
+        }
+
+        if (s_wifi_network_count == 0U) {
+            lv_dropdown_set_options(
+                s_wifi_network_dropdown,
+                "No networks - tap SCAN");
+        } else {
+            lv_dropdown_set_options(s_wifi_network_dropdown, options);
+            lv_dropdown_set_selected(s_wifi_network_dropdown, 0U);
+        }
+        s_wifi_scan_generation = snapshot.scan_generation;
+        ui_wifi_update_selected_detail();
+    }
+
+    if (snapshot.revision == s_wifi_revision) {
+        return;
+    }
+
+    lv_obj_set_style_text_color(
+        s_wifi_status_label,
+        lv_color_hex(snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED),
+        LV_PART_MAIN);
+    if (snapshot.connected) {
+        lv_label_set_text_fmt(
+            s_wifi_page_state_label,
+            "CONNECTED: %s\nIP: %s",
+            snapshot.ssid,
+            snapshot.ip_address);
+    } else {
+        lv_label_set_text(s_wifi_page_state_label, snapshot.status);
+    }
+    s_wifi_revision = snapshot.revision;
+}
+
 static void ui_timer_callback(lv_timer_t *timer)
 {
     (void)timer;
     ui_update_motor_data();
+    ui_update_wifi_data();
 }
 
 void motor_ui_create(lv_display_t *display)
@@ -1314,9 +1646,14 @@ void motor_ui_create(lv_display_t *display)
         LV_EVENT_CLICKED,
         NULL);
 
+    s_wifi_status_label = ui_create_label(
+        screen, "WI-FI", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_align(s_wifi_status_label, LV_ALIGN_TOP_RIGHT, -6, 5);
     s_can_status_label = ui_create_label(
         screen, "CAN", UI_COLOR_RED, &lv_font_montserrat_12);
-    lv_obj_align(s_can_status_label, LV_ALIGN_TOP_RIGHT, -6, 5);
+    lv_obj_align_to(
+        s_can_status_label, s_wifi_status_label,
+        LV_ALIGN_OUT_LEFT_MID, -10, 0);
     s_uart_status_label = ui_create_label(
         screen, "USART", UI_COLOR_RED, &lv_font_montserrat_12);
     lv_obj_align_to(
@@ -1345,6 +1682,7 @@ void motor_ui_create(lv_display_t *display)
     ui_create_home_page(s_pages[UI_PAGE_HOME]);
     ui_create_uart_page(s_pages[UI_PAGE_UART]);
     ui_create_can_page(s_pages[UI_PAGE_CAN]);
+    ui_create_wifi_page(s_pages[UI_PAGE_WIFI]);
     ui_create_speed_page(s_pages[UI_PAGE_SPEED]);
     ui_create_position_page(s_pages[UI_PAGE_POSITION]);
     ui_create_speed_chart_page(s_pages[UI_PAGE_SPEED_CHART]);
@@ -1354,8 +1692,10 @@ void motor_ui_create(lv_display_t *display)
     lv_obj_move_foreground(s_page_label);
     lv_obj_move_foreground(s_uart_status_label);
     lv_obj_move_foreground(s_can_status_label);
+    lv_obj_move_foreground(s_wifi_status_label);
     lv_timer_create(ui_timer_callback, 50, NULL);
     ui_update_motor_data();
+    ui_update_wifi_data();
     lv_obj_update_layout(screen);
     lv_obj_invalidate(screen);
     /* The LVGL port task performs the invalidated full-screen refresh. */

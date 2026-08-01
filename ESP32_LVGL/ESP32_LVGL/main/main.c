@@ -20,6 +20,7 @@
 #include "board_touch.h"
 #include "motor_link.h"
 #include "motor_ui.h"
+#include "wifi_manager.h"
 
 /* ============================================================
  * 基本配置
@@ -621,6 +622,13 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting DNESP32S3B Motor HMI");
     board_set_time_from_build();
     motor_link_init();
+    const esp_err_t wifi_result = wifi_manager_init();
+    if (wifi_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "Wi-Fi initialization failed: %s",
+            esp_err_to_name(wifi_result));
+    }
 
     /*
      * 先关闭背光，再初始化屏幕，
