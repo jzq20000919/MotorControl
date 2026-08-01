@@ -37,9 +37,9 @@ static const char *TAG = "MOTOR_HMI";
 #define LCD_V_RES              240
 
 /*
- * LVGL 每个绘图缓冲区保存 20 行。
- * 两个缓冲区大约占用：
- * 320 × 20 × 2 × 2 = 25.6 KB
+ * LVGL 使用单个整屏 RGB565 绘图缓冲区：
+ * 320 × 240 × 2 = 153.6 KB。
+ * 整屏刷新用于避免页面切换时的残影。
  */
 #define LCD_DRAW_BUF_LINES     LCD_V_RES
 
@@ -623,6 +623,23 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting DNESP32S3B Motor HMI");
     board_set_time_from_build();
     motor_link_init();
+
+    /*
+     * 先关闭背光，再初始化屏幕，
+     * 可以减少启动过程中的白屏和闪屏。
+     */
+    board_xl9555_init();
+    board_keys_init();
+    board_lcd_backlight_set(false);
+
+    board_lcd_init();
+    board_lvgl_init();
+
+    /*
+     * LVGL 的整屏缓冲区需要一块连续的 DMA 内部内存。
+     * 先完成显示注册，避免 Wi-Fi 网络栈和 MQTT 任务提前
+     * 占用或碎片化这部分内存。
+     */
     const esp_err_t wifi_result = wifi_manager_init();
     if (wifi_result != ESP_OK) {
         ESP_LOGE(
@@ -637,17 +654,6 @@ void app_main(void)
             "MQTT initialization failed: %s",
             esp_err_to_name(mqtt_result));
     }
-
-    /*
-     * 先关闭背光，再初始化屏幕，
-     * 可以减少启动过程中的白屏和闪屏。
-     */
-    board_xl9555_init();
-    board_keys_init();
-    board_lcd_backlight_set(false);
-
-    board_lcd_init();
-    board_lvgl_init();
 
     ESP_LOGI(TAG, "Creating motor control UI");
     lvgl_port_lock(0);
