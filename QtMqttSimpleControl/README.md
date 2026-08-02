@@ -1,14 +1,16 @@
 # QtMqttSimpleControl
 
 独立的 Qt 6 Widgets MQTT 命令发送器。它只连接 Mosquitto 并向
-`motor/control/command` 发布命令，不订阅任何主题，也不显示 ESP32 或
-STM32 的遥测、应答和状态。
+`motor/control/command` 发布命令，不订阅电机遥测主题。窗口会显示本程序
+与 MQTT Broker 的连接状态，但不显示 ESP32 或 STM32 的反馈数据。
 
 ## 功能
 
 - 输入 Broker IPv4 地址和端口并连接或断开。
-- 发送速度命令，范围 `-2600..2600 RPM`。
-- 发送单圈位置命令，范围 `0.00..359.99°`。
+- 红/黄/绿状态灯显示 MQTT 离线、连接中和在线状态。
+- 使用滑块发送速度命令，范围 `-2600..2600 RPM`。
+- 使用滑块发送单圈位置命令，范围 `0.00..359.99°`。
+- 发送电机启动和停止命令。
 - MQTT 3.1.1、QoS 1，20 秒 Keep Alive，每 10 秒发送 PINGREQ。
 - TCP 强制使用 `QNetworkProxy::NoProxy`，不继承 Windows 系统代理。
 

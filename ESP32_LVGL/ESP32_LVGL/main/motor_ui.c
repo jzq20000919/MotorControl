@@ -243,7 +243,7 @@ static void ui_show_page(ui_page_t page)
     s_page_animating = false;
     s_current_page = page;
     lv_label_set_text(s_page_label, s_page_names[page]);
-    lv_obj_invalidate(s_page_viewport);
+    lv_obj_invalidate(lv_screen_active());
 }
 
 static void ui_page_animation_set_y(void *object, int32_t value)
@@ -269,13 +269,24 @@ static void ui_page_animation_in_completed(lv_anim_t *animation)
         }
     }
     s_page_animating = false;
-    lv_obj_invalidate(s_page_viewport);
+    lv_obj_invalidate(lv_screen_active());
 }
 
 static void ui_animate_to_page(ui_page_t page, bool forward)
 {
     if (page >= UI_PAGE_COUNT || page == s_current_page ||
         s_page_animating) {
+        return;
+    }
+
+    /*
+     * The large CAN title was the only object still leaving visible pixels
+     * on this single-buffer i80 panel.  Use an atomic hide/show transition
+     * whenever CAN is one side of the switch, then invalidate the complete
+     * screen.  Other pages keep the requested vertical animation.
+     */
+    if (s_current_page == UI_PAGE_CAN || page == UI_PAGE_CAN) {
+        ui_show_page(page);
         return;
     }
 
