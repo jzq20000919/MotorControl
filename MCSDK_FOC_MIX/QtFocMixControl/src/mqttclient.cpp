@@ -1,6 +1,7 @@
 #include "mqttclient.h"
 
 #include <QAbstractSocket>
+#include <QNetworkProxy>
 
 namespace {
 constexpr quint8 kMqttConnect = 1U;
@@ -15,6 +16,9 @@ constexpr quint16 kKeepAliveSeconds = 20U;
 MqttClient::MqttClient(QObject *parent)
     : QObject(parent)
 {
+    // The broker is on the local network; never route raw MQTT through the
+    // Windows HTTP/system proxy.
+    socket_.setProxy(QNetworkProxy::NoProxy);
     keepAliveTimer_.setInterval(10000);
     connect(&socket_, &QTcpSocket::connected,
             this, &MqttClient::onTcpConnected);
@@ -25,6 +29,13 @@ MqttClient::MqttClient(QObject *parent)
     connect(&socket_, &QTcpSocket::errorOccurred, this,
             [this](QAbstractSocket::SocketError) {
                 emit errorOccurred(socket_.errorString());
+                QTimer::singleShot(0, this, [this] {
+                    if (socket_.state() == QAbstractSocket::UnconnectedState &&
+                        !disconnectSignalEmitted_) {
+                        disconnectSignalEmitted_ = true;
+                        emit disconnected();
+                    }
+                });
             });
     connect(&keepAliveTimer_, &QTimer::timeout,
             this, &MqttClient::sendPing);
@@ -35,6 +46,7 @@ MqttClient::~MqttClient()
     keepAliveTimer_.stop();
     socket_.blockSignals(true);
     mqttConnected_ = false;
+    pingOutstanding_ = false;
     socket_.abort();
 }
 
@@ -44,6 +56,7 @@ void MqttClient::connectToBroker(const QString &host, quint16 port,
     disconnectFromBroker();
     inputBuffer_.clear();
     clientId_ = clientId;
+    disconnectSignalEmitted_ = false;
     emit diagnosticMessage(
         tr("Connecting to MQTT broker %1:%2").arg(host).arg(port));
     socket_.connectToHost(host, port);
@@ -109,6 +122,8 @@ bool MqttClient::publish(const QString &topic, const QByteArray &payload,
 
 void MqttClient::onTcpConnected()
 {
+    disconnectSignalEmitted_ = false;
+    pingOutstanding_ = false;
     QByteArray variableHeader;
     appendMqttString(variableHeader, QByteArrayLiteral("MQTT"));
     variableHeader.append('\x04');
@@ -126,12 +141,16 @@ void MqttClient::onTcpDisconnected()
 {
     const bool wasConnected = mqttConnected_;
     mqttConnected_ = false;
+    pingOutstanding_ = false;
     keepAliveTimer_.stop();
     inputBuffer_.clear();
     if (wasConnected) {
         emit diagnosticMessage(tr("MQTT broker disconnected"));
     }
-    emit disconnected();
+    if (!disconnectSignalEmitted_) {
+        disconnectSignalEmitted_ = true;
+        emit disconnected();
+    }
 }
 
 void MqttClient::onReadyRead()
@@ -142,8 +161,16 @@ void MqttClient::onReadyRead()
 
 void MqttClient::sendPing()
 {
-    if (mqttConnected_) {
-        sendPacket(0xC0U, {});
+    if (!mqttConnected_) {
+        return;
+    }
+    if (pingOutstanding_) {
+        emit errorOccurred(tr("MQTT keepalive timed out"));
+        socket_.abort();
+        return;
+    }
+    if (sendPacket(0xC0U, {})) {
+        pingOutstanding_ = true;
     }
 }
 
@@ -279,8 +306,12 @@ void MqttClient::processPacket(quint8 header, const QByteArray &body)
         return;
     }
 
-    if (type == kMqttPubAck || type == kMqttSubAck ||
-        type == kMqttPingResp) {
+    if (type == kMqttPingResp) {
+        pingOutstanding_ = false;
+        return;
+    }
+
+    if (type == kMqttPubAck || type == kMqttSubAck) {
         return;
     }
 }

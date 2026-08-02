@@ -49,5 +49,7 @@ private:
     QByteArray inputBuffer_;
     QString clientId_;
     bool mqttConnected_ = false;
+    bool pingOutstanding_ = false;
+    bool disconnectSignalEmitted_ = false;
     quint16 packetId_ = 0U;
 };

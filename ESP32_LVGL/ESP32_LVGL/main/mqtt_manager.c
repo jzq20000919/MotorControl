@@ -5,6 +5,7 @@
 
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -41,6 +42,8 @@ static QueueHandle_t s_command_queue;
 static esp_mqtt_client_handle_t s_client;
 static mqtt_manager_snapshot_t s_snapshot;
 static char s_active_uri[MQTT_MANAGER_URI_MAX_LEN + 1U];
+static char s_client_id[32];
+static char s_last_error[80];
 static mqtt_manager_message_callback_t s_message_callback;
 static void *s_message_callback_context;
 
@@ -121,6 +124,7 @@ static void mqtt_manager_event_handler(
         mqtt_manager_lock();
         s_snapshot.connecting = false;
         s_snapshot.connected = true;
+        s_last_error[0] = '\0';
         mqtt_manager_set_status_locked("Connected - RX topic ready");
         mqtt_manager_unlock();
         if (event != NULL) {
@@ -140,8 +144,23 @@ static void mqtt_manager_event_handler(
         mqtt_manager_lock();
         s_snapshot.connected = false;
         s_snapshot.connecting = true;
-        mqtt_manager_set_status_locked("Disconnected - retrying");
+        if (s_last_error[0] != '\0') {
+            snprintf(
+                s_snapshot.status,
+                sizeof(s_snapshot.status),
+                "%s; retrying in 3s",
+                s_last_error);
+            s_snapshot.revision++;
+        } else {
+            mqtt_manager_set_status_locked(
+                "MQTT link lost; retrying in 3s");
+        }
         mqtt_manager_unlock();
+        ESP_LOGW(
+            TAG,
+            "MQTT disconnected%s%s",
+            s_last_error[0] != '\0' ? ": " : "",
+            s_last_error);
         break;
 
     case MQTT_EVENT_PUBLISHED:
@@ -215,19 +234,42 @@ static void mqtt_manager_event_handler(
         mqtt_manager_lock();
         s_snapshot.connected = false;
         if (event != NULL && event->error_handle != NULL) {
-            snprintf(
-                s_snapshot.status,
-                sizeof(s_snapshot.status),
-                "MQTT error type %d",
-                (int)event->error_handle->error_type);
+            const esp_mqtt_error_codes_t *error = event->error_handle;
+            if (error->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+                snprintf(
+                    s_last_error,
+                    sizeof(s_last_error),
+                    "MQTT TCP sock=%d tls=0x%X stack=0x%X",
+                    error->esp_transport_sock_errno,
+                    (unsigned int)error->esp_tls_last_esp_err,
+                    (unsigned int)error->esp_tls_stack_err);
+            } else if (
+                error->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+                snprintf(
+                    s_last_error,
+                    sizeof(s_last_error),
+                    "MQTT refused code=%d",
+                    (int)error->connect_return_code);
+            } else {
+                snprintf(
+                    s_last_error,
+                    sizeof(s_last_error),
+                    "MQTT error type=%d",
+                    (int)error->error_type);
+            }
         } else {
             strlcpy(
-                s_snapshot.status,
+                s_last_error,
                 "MQTT connection error",
-                sizeof(s_snapshot.status));
+                sizeof(s_last_error));
         }
+        strlcpy(
+            s_snapshot.status,
+            s_last_error,
+            sizeof(s_snapshot.status));
         s_snapshot.revision++;
         mqtt_manager_unlock();
+        ESP_LOGE(TAG, "%s", s_last_error);
         break;
 
     default:
@@ -277,7 +319,7 @@ static void mqtt_manager_worker(void *argument)
         strlcpy(s_active_uri, command.broker_uri, sizeof(s_active_uri));
         const esp_mqtt_client_config_t configuration = {
             .broker.address.uri = s_active_uri,
-            .credentials.client_id = "esp32s3-motor-hmi",
+            .credentials.client_id = s_client_id,
             .session.keepalive = 30,
             .network.reconnect_timeout_ms = 3000,
             .outbox.limit = MQTT_MANAGER_OUTBOX_LIMIT_BYTES,
@@ -327,6 +369,13 @@ esp_err_t mqtt_manager_init(void)
         return ESP_OK;
     }
 
+    uint8_t station_mac[6];
+    const esp_err_t mac_result =
+        esp_read_mac(station_mac, ESP_MAC_WIFI_STA);
+    if (mac_result != ESP_OK) {
+        return mac_result;
+    }
+
     s_lock = xSemaphoreCreateMutex();
     s_client_api_lock = xSemaphoreCreateMutex();
     s_command_queue = xQueueCreate(
@@ -338,11 +387,18 @@ esp_err_t mqtt_manager_init(void)
     }
 
     memset(&s_snapshot, 0, sizeof(s_snapshot));
+    snprintf(
+        s_client_id,
+        sizeof(s_client_id),
+        "esp32s3-motor-%02X%02X%02X%02X%02X%02X",
+        station_mac[0], station_mac[1], station_mac[2],
+        station_mac[3], station_mac[4], station_mac[5]);
     s_snapshot.initialized = true;
     strlcpy(
         s_snapshot.status,
         "Ready - enter broker URI",
         sizeof(s_snapshot.status));
+    ESP_LOGI(TAG, "MQTT client ID: %s", s_client_id);
 
     if (xTaskCreate(
             mqtt_manager_worker,

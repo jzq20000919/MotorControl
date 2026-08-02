@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QMainWindow>
+#include <QTimer>
 
 class QDoubleSpinBox;
 class QLabel;
@@ -47,6 +48,8 @@ private:
     void setValue(const QString &key, const QString &value);
     void updateFaultIndicators(quint16 currentFaults, quint16 occurredFaults);
     void setControlsEnabled(bool enabled);
+    void applyTelemetryMode(int mode);
+    void requestModeChange(bool positionMode);
     static QString motorStateName(quint8 state);
 
     WirelessProtocol protocol_;
@@ -72,5 +75,9 @@ private:
     bool applyingTelemetry_ = false;
     bool speedTargetLocallySet_ = false;
     bool positionTargetLocallySet_ = false;
+    QTimer modeChangeTimeout_;
+    int pendingMode_ = -1;
+    int lastTelemetryMode_ = 0;
+    bool hasTelemetryMode_ = false;
     double currentMultiTurnDegree_ = 0.0;
 };

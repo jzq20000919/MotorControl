@@ -10,6 +10,8 @@ const QString kTelemetryTopic = QStringLiteral("motor/control/telemetry");
 const QString kAckTopic = QStringLiteral("motor/control/ack");
 const QString kStatusTopic = QStringLiteral("motor/control/status");
 constexpr qint64 kTelemetryTimeoutMs = 1500;
+constexpr int kReconnectDelayInitialMs = 1000;
+constexpr int kReconnectDelayMaximumMs = 10000;
 }
 
 WirelessProtocol::WirelessProtocol(QObject *parent)
@@ -18,6 +20,7 @@ WirelessProtocol::WirelessProtocol(QObject *parent)
 {
     qRegisterMetaType<FocTelemetry>();
     telemetryWatchdog_.setInterval(500);
+    reconnectTimer_.setSingleShot(true);
 
     connect(&mqtt_, &MqttClient::connected,
             this, &WirelessProtocol::onMqttConnected);
@@ -33,6 +36,8 @@ WirelessProtocol::WirelessProtocol(QObject *parent)
             this, &WirelessProtocol::diagnosticMessage);
     connect(&telemetryWatchdog_, &QTimer::timeout,
             this, &WirelessProtocol::checkTelemetryTimeout);
+    connect(&reconnectTimer_, &QTimer::timeout,
+            this, &WirelessProtocol::attemptReconnect);
 }
 
 bool WirelessProtocol::connectBroker(const QString &host, quint16 port)
@@ -41,18 +46,25 @@ bool WirelessProtocol::connectBroker(const QString &host, quint16 port)
         emit protocolError(tr("Invalid MQTT broker address"));
         return false;
     }
+    connectionRequested_ = true;
+    brokerHost_ = host.trimmed();
+    brokerPort_ = port;
+    clientId_ = QStringLiteral("qt-foc-%1")
+        .arg(QCoreApplication::applicationPid());
+    reconnectDelayMs_ = kReconnectDelayInitialMs;
+    reconnectTimer_.stop();
     gatewayConnected_ = false;
     telemetrySeen_ = false;
     telemetryWatchdog_.stop();
     emit connectionChanged(false, tr("Connecting to MQTT broker..."));
-    const QString clientId = QStringLiteral("qt-foc-%1")
-        .arg(QCoreApplication::applicationPid());
-    mqtt_.connectToBroker(host.trimmed(), port, clientId);
+    mqtt_.connectToBroker(brokerHost_, brokerPort_, clientId_);
     return true;
 }
 
 void WirelessProtocol::disconnectBroker()
 {
+    connectionRequested_ = false;
+    reconnectTimer_.stop();
     telemetryWatchdog_.stop();
     gatewayConnected_ = false;
     telemetrySeen_ = false;
@@ -62,7 +74,7 @@ void WirelessProtocol::disconnectBroker()
 
 bool WirelessProtocol::isBrokerOpen() const
 {
-    return mqtt_.isSocketOpen();
+    return connectionRequested_ || mqtt_.isSocketOpen();
 }
 
 bool WirelessProtocol::isBrokerConnected() const
@@ -112,6 +124,8 @@ void WirelessProtocol::zeroPosition()
 
 void WirelessProtocol::onMqttConnected()
 {
+    reconnectTimer_.stop();
+    reconnectDelayMs_ = kReconnectDelayInitialMs;
     mqtt_.subscribe(kTelemetryTopic, 0U);
     mqtt_.subscribe(kAckTopic, 1U);
     mqtt_.subscribe(kStatusTopic, 1U);
@@ -127,7 +141,40 @@ void WirelessProtocol::onMqttDisconnected()
     telemetryWatchdog_.stop();
     gatewayConnected_ = false;
     telemetrySeen_ = false;
-    emit connectionChanged(false, tr("MQTT disconnected"));
+    if (connectionRequested_) {
+        scheduleReconnect();
+    } else {
+        emit connectionChanged(false, tr("MQTT disconnected"));
+    }
+}
+
+void WirelessProtocol::scheduleReconnect()
+{
+    if (!connectionRequested_ || reconnectTimer_.isActive()) {
+        return;
+    }
+    const int delayMs = reconnectDelayMs_;
+    reconnectDelayMs_ = qMin(
+        reconnectDelayMs_ * 2,
+        kReconnectDelayMaximumMs);
+    emit connectionChanged(
+        false,
+        tr("MQTT disconnected - retrying in %1 s")
+            .arg(delayMs / 1000.0, 0, 'f', 1));
+    reconnectTimer_.start(delayMs);
+}
+
+void WirelessProtocol::attemptReconnect()
+{
+    if (!connectionRequested_ || brokerHost_.isEmpty()) {
+        return;
+    }
+    emit diagnosticMessage(
+        tr("Reconnecting to MQTT broker %1:%2")
+            .arg(brokerHost_)
+            .arg(brokerPort_));
+    emit connectionChanged(false, tr("Reconnecting to MQTT broker..."));
+    mqtt_.connectToBroker(brokerHost_, brokerPort_, clientId_);
 }
 
 void WirelessProtocol::onMqttMessage(const QString &topic,

@@ -71,6 +71,7 @@ private slots:
     void onMqttDisconnected();
     void onMqttMessage(const QString &topic, const QByteArray &payload);
     void checkTelemetryTimeout();
+    void attemptReconnect();
 
 private:
     void publishCommand(const QString &command,
@@ -79,11 +80,18 @@ private:
     void processTelemetry(const QByteArray &payload);
     void processAcknowledgement(const QByteArray &payload);
     void updateLinkState(bool linkActive, const QString &transportName);
+    void scheduleReconnect();
 
     MqttClient mqtt_;
     QTimer telemetryWatchdog_;
+    QTimer reconnectTimer_;
     QElapsedTimer lastTelemetry_;
+    QString brokerHost_;
+    QString clientId_;
+    quint16 brokerPort_ = 1883U;
+    int reconnectDelayMs_ = 1000;
     quint32 nextCommandId_ = 0U;
+    bool connectionRequested_ = false;
     bool gatewayConnected_ = false;
     bool telemetrySeen_ = false;
 };

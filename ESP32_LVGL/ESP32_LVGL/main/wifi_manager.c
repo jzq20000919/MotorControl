@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -19,8 +20,12 @@ static wifi_manager_snapshot_t s_snapshot;
 static esp_netif_t *s_station_netif;
 static esp_event_handler_instance_t s_wifi_event_instance;
 static esp_event_handler_instance_t s_ip_event_instance;
+static esp_timer_handle_t s_reconnect_timer;
 static bool s_ignore_next_disconnect;
 static bool s_user_disconnect;
+static uint32_t s_reconnect_attempt;
+
+#define WIFI_MANAGER_RECONNECT_MAX_DELAY_MS 10000U
 
 static void wifi_manager_lock(void)
 {
@@ -40,6 +45,91 @@ static void wifi_manager_set_status_locked(const char *status)
 {
     strlcpy(s_snapshot.status, status, sizeof(s_snapshot.status));
     s_snapshot.revision++;
+}
+
+static uint32_t wifi_manager_reconnect_delay_ms(uint32_t attempt)
+{
+    uint32_t delay_ms = 1000U << (attempt < 4U ? attempt : 4U);
+    if (delay_ms > WIFI_MANAGER_RECONNECT_MAX_DELAY_MS) {
+        delay_ms = WIFI_MANAGER_RECONNECT_MAX_DELAY_MS;
+    }
+    return delay_ms;
+}
+
+static void wifi_manager_schedule_reconnect_locked(uint16_t reason)
+{
+    if (s_reconnect_timer == NULL || s_user_disconnect) {
+        s_snapshot.connecting = false;
+        snprintf(
+            s_snapshot.status,
+            sizeof(s_snapshot.status),
+            "Wi-Fi offline (reason %u) - tap CONNECT",
+            (unsigned int)reason);
+        s_snapshot.revision++;
+        return;
+    }
+
+    const uint32_t delay_ms =
+        wifi_manager_reconnect_delay_ms(s_reconnect_attempt);
+    if (s_reconnect_attempt < UINT32_MAX) {
+        s_reconnect_attempt++;
+    }
+    s_snapshot.connecting = true;
+    snprintf(
+        s_snapshot.status,
+        sizeof(s_snapshot.status),
+        "Wi-Fi lost (%u), retry %lu in %lus",
+        (unsigned int)reason,
+        (unsigned long)s_reconnect_attempt,
+        (unsigned long)((delay_ms + 999U) / 1000U));
+    s_snapshot.revision++;
+
+    (void)esp_timer_stop(s_reconnect_timer);
+    const esp_err_t timer_result =
+        esp_timer_start_once(s_reconnect_timer, delay_ms * 1000ULL);
+    if (timer_result != ESP_OK) {
+        s_snapshot.connecting = false;
+        snprintf(
+            s_snapshot.status,
+            sizeof(s_snapshot.status),
+            "Wi-Fi retry timer failed: %s",
+            esp_err_to_name(timer_result));
+        s_snapshot.revision++;
+    }
+}
+
+static void wifi_manager_reconnect_timer_callback(void *argument)
+{
+    (void)argument;
+
+    wifi_manager_lock();
+    const bool should_reconnect =
+        s_snapshot.initialized && !s_snapshot.connected &&
+        !s_user_disconnect;
+    if (should_reconnect) {
+        snprintf(
+            s_snapshot.status,
+            sizeof(s_snapshot.status),
+            "Reconnecting Wi-Fi (attempt %lu)...",
+            (unsigned long)s_reconnect_attempt);
+        s_snapshot.revision++;
+    }
+    wifi_manager_unlock();
+
+    if (!should_reconnect) {
+        return;
+    }
+
+    const esp_err_t result = esp_wifi_connect();
+    if (result != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "Wi-Fi reconnect request failed: %s",
+            esp_err_to_name(result));
+        wifi_manager_lock();
+        wifi_manager_schedule_reconnect_locked(0U);
+        wifi_manager_unlock();
+    }
 }
 
 static void wifi_manager_set_error(esp_err_t error, const char *operation)
@@ -169,6 +259,8 @@ static void wifi_manager_event_handler(
 
         case WIFI_EVENT_STA_DISCONNECTED: {
             const wifi_event_sta_disconnected_t *event = event_data;
+            const uint16_t reason =
+                event != NULL ? (uint16_t)event->reason : 0U;
             wifi_manager_lock();
             s_snapshot.connected = false;
             s_snapshot.ip_address[0] = '\0';
@@ -177,17 +269,16 @@ static void wifi_manager_event_handler(
             } else if (s_user_disconnect) {
                 s_snapshot.connecting = false;
                 s_user_disconnect = false;
+                s_reconnect_attempt = 0U;
                 wifi_manager_set_status_locked("Disconnected");
             } else {
-                s_snapshot.connecting = false;
-                snprintf(
-                    s_snapshot.status,
-                    sizeof(s_snapshot.status),
-                    "Connection failed (reason %u)",
-                    event != NULL ? (unsigned int)event->reason : 0U);
-                s_snapshot.revision++;
+                wifi_manager_schedule_reconnect_locked(reason);
             }
             wifi_manager_unlock();
+            ESP_LOGW(
+                TAG,
+                "Wi-Fi station disconnected, reason=%u",
+                (unsigned int)reason);
             break;
         }
 
@@ -202,6 +293,8 @@ static void wifi_manager_event_handler(
         wifi_manager_lock();
         s_snapshot.connected = true;
         s_snapshot.connecting = false;
+        s_reconnect_attempt = 0U;
+        (void)esp_timer_stop(s_reconnect_timer);
         if (event != NULL) {
             esp_ip4addr_ntoa(
                 &event->ip_info.ip,
@@ -231,7 +324,18 @@ esp_err_t wifi_manager_init(void)
     memset(&s_snapshot, 0, sizeof(s_snapshot));
     strlcpy(s_snapshot.status, "Initializing Wi-Fi", sizeof(s_snapshot.status));
 
-    esp_err_t result = nvs_flash_init();
+    const esp_timer_create_args_t reconnect_timer_configuration = {
+        .callback = wifi_manager_reconnect_timer_callback,
+        .name = "wifi_reconnect",
+    };
+    esp_err_t result = esp_timer_create(
+        &reconnect_timer_configuration, &s_reconnect_timer);
+    if (result != ESP_OK) {
+        wifi_manager_set_error(result, "Wi-Fi retry timer failed");
+        return result;
+    }
+
+    result = nvs_flash_init();
     if (result == ESP_ERR_NVS_NO_FREE_PAGES ||
         result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -293,6 +397,9 @@ esp_err_t wifi_manager_init(void)
     }
     if (result == ESP_OK) {
         result = esp_wifi_start();
+    }
+    if (result == ESP_OK) {
+        result = esp_wifi_set_ps(WIFI_PS_NONE);
     }
     if (result != ESP_OK) {
         wifi_manager_set_error(result, "Wi-Fi start failed");
@@ -358,6 +465,8 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
         wifi_manager_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    (void)esp_timer_stop(s_reconnect_timer);
+    s_reconnect_attempt = 0U;
     strlcpy(s_snapshot.ssid, ssid, sizeof(s_snapshot.ssid));
     s_snapshot.ip_address[0] = '\0';
     s_snapshot.connected = false;
@@ -396,6 +505,8 @@ esp_err_t wifi_manager_disconnect(void)
         wifi_manager_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    (void)esp_timer_stop(s_reconnect_timer);
+    s_reconnect_attempt = 0U;
     s_user_disconnect = true;
     s_ignore_next_disconnect = false;
     s_snapshot.connecting = false;

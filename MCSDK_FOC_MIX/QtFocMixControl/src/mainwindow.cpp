@@ -39,6 +39,7 @@ constexpr quint16 kFaultSpeedFeedback = 0x0020U;
 constexpr quint16 kFaultOverCurrent = 0x0040U;
 constexpr quint16 kFaultSoftware = 0x0080U;
 constexpr quint16 kFaultDriverProtection = 0x0400U;
+constexpr int kModeChangeTimeoutMs = 1200;
 
 double normalizeDegree(double degree)
 {
@@ -86,6 +87,26 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onProtocolError);
     connect(&protocol_, &WirelessProtocol::diagnosticMessage,
             this, &MainWindow::appendWirelessLog);
+
+    modeChangeTimeout_.setSingleShot(true);
+    modeChangeTimeout_.setInterval(kModeChangeTimeoutMs);
+    connect(&modeChangeTimeout_, &QTimer::timeout, this, [this] {
+        if (pendingMode_ < 0) {
+            return;
+        }
+
+        const int requestedMode = pendingMode_;
+        pendingMode_ = -1;
+        if (hasTelemetryMode_) {
+            applyTelemetryMode(lastTelemetryMode_);
+        }
+
+        const QString message = tr(
+            "模式切换超时：STM32 未确认%1模式，已恢复遥测状态")
+            .arg(requestedMode == 1 ? tr("位置") : tr("速度"));
+        appendWirelessLog(message);
+        statusBar()->showMessage(message, 5000);
+    });
 
     setControlsEnabled(false);
     statusBar()->showMessage(tr("Enter the MQTT broker address and connect"));
@@ -557,6 +578,9 @@ void MainWindow::onConnectionChanged(bool connected, const QString &status)
     brokerPortSpin_->setEnabled(!protocol_.isBrokerOpen());
     setControlsEnabled(connected);
     if (!connected) {
+        modeChangeTimeout_.stop();
+        pendingMode_ = -1;
+        hasTelemetryMode_ = false;
         updateFaultIndicators(0U, 0U);
         speedTargetLocallySet_ = false;
         positionTargetLocallySet_ = false;
@@ -582,9 +606,15 @@ void MainWindow::onTelemetry(const FocTelemetry &telemetry)
                  .arg(telemetry.occurredFaults, 4, 16, QLatin1Char('0')));
     updateFaultIndicators(telemetry.currentFaults, telemetry.occurredFaults);
 
-    speedModeButton_->setChecked(telemetry.mode == 0);
-    positionModeButton_->setChecked(telemetry.mode == 1);
-    controlStack_->setCurrentIndex(telemetry.mode == 1 ? 1 : 0);
+    lastTelemetryMode_ = telemetry.mode == 1 ? 1 : 0;
+    hasTelemetryMode_ = true;
+    if (pendingMode_ < 0) {
+        applyTelemetryMode(lastTelemetryMode_);
+    } else if (lastTelemetryMode_ == pendingMode_) {
+        modeChangeTimeout_.stop();
+        pendingMode_ = -1;
+        applyTelemetryMode(lastTelemetryMode_);
+    }
     if ((telemetry.mode == 0) && !speedTargetLocallySet_ &&
         !speedSlider_->isSliderDown() && !speedSpin_->hasFocus()) {
         speedSpin_->setValue(telemetry.speedReferenceRpm);
@@ -643,9 +673,28 @@ void MainWindow::onModeChanged()
         speedSlider_->setValue(0);
     }
 
-    if (!applyingTelemetry_ && protocol_.isConnected()) {
-        protocol_.setMode(positionMode);
+    if (!applyingTelemetry_) {
+        requestModeChange(positionMode);
     }
+}
+
+void MainWindow::applyTelemetryMode(int mode)
+{
+    const bool positionMode = mode == 1;
+    speedModeButton_->setChecked(!positionMode);
+    positionModeButton_->setChecked(positionMode);
+    controlStack_->setCurrentIndex(positionMode ? 1 : 0);
+}
+
+void MainWindow::requestModeChange(bool positionMode)
+{
+    if (!protocol_.isConnected()) {
+        return;
+    }
+
+    pendingMode_ = positionMode ? 1 : 0;
+    modeChangeTimeout_.start();
+    protocol_.setMode(positionMode);
 }
 
 void MainWindow::onSpeedChanged(int rpm)
@@ -700,7 +749,7 @@ void MainWindow::submitPositionTarget()
     if (!positionModeButton_->isChecked()) {
         positionModeButton_->setChecked(true);
         controlStack_->setCurrentIndex(1);
-        protocol_.setMode(true);
+        requestModeChange(true);
     }
 
     positionDial_->setTargetDegree(degree);
