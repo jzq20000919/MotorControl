@@ -14,6 +14,7 @@
 #define MQTT_MANAGER_COMMAND_QUEUE_LENGTH 4U
 #define MQTT_MANAGER_WORKER_STACK_SIZE 4096U
 #define MQTT_MANAGER_WORKER_PRIORITY 4U
+#define MQTT_MANAGER_OUTBOX_LIMIT_BYTES 8192U
 
 typedef enum
 {
@@ -30,6 +31,12 @@ typedef struct
 static const char *TAG = "MQTT_MANAGER";
 
 static SemaphoreHandle_t s_lock;
+/*
+ * Serializes client API calls with client stop/destroy.  This lock must be
+ * independent from s_lock: ESP-MQTT dispatches callbacks while holding its
+ * own API lock, and those callbacks update s_snapshot under s_lock.
+ */
+static SemaphoreHandle_t s_client_api_lock;
 static QueueHandle_t s_command_queue;
 static esp_mqtt_client_handle_t s_client;
 static mqtt_manager_snapshot_t s_snapshot;
@@ -48,6 +55,20 @@ static void mqtt_manager_unlock(void)
 {
     if (s_lock != NULL) {
         xSemaphoreGive(s_lock);
+    }
+}
+
+static void mqtt_manager_client_api_lock(void)
+{
+    if (s_client_api_lock != NULL) {
+        xSemaphoreTake(s_client_api_lock, portMAX_DELAY);
+    }
+}
+
+static void mqtt_manager_client_api_unlock(void)
+{
+    if (s_client_api_lock != NULL) {
+        xSemaphoreGive(s_client_api_lock);
     }
 }
 
@@ -216,6 +237,7 @@ static void mqtt_manager_event_handler(
 
 static void mqtt_manager_stop_client(void)
 {
+    mqtt_manager_client_api_lock();
     mqtt_manager_lock();
     esp_mqtt_client_handle_t client = s_client;
     s_client = NULL;
@@ -225,6 +247,7 @@ static void mqtt_manager_stop_client(void)
         (void)esp_mqtt_client_stop(client);
         (void)esp_mqtt_client_destroy(client);
     }
+    mqtt_manager_client_api_unlock();
 }
 
 static void mqtt_manager_worker(void *argument)
@@ -257,6 +280,7 @@ static void mqtt_manager_worker(void *argument)
             .credentials.client_id = "esp32s3-motor-hmi",
             .session.keepalive = 30,
             .network.reconnect_timeout_ms = 3000,
+            .outbox.limit = MQTT_MANAGER_OUTBOX_LIMIT_BYTES,
         };
         esp_mqtt_client_handle_t client =
             esp_mqtt_client_init(&configuration);
@@ -304,10 +328,12 @@ esp_err_t mqtt_manager_init(void)
     }
 
     s_lock = xSemaphoreCreateMutex();
+    s_client_api_lock = xSemaphoreCreateMutex();
     s_command_queue = xQueueCreate(
         MQTT_MANAGER_COMMAND_QUEUE_LENGTH,
         sizeof(mqtt_manager_command_t));
-    if (s_lock == NULL || s_command_queue == NULL) {
+    if (s_lock == NULL || s_client_api_lock == NULL ||
+        s_command_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
@@ -394,13 +420,17 @@ esp_err_t mqtt_manager_publish(
         return ESP_ERR_INVALID_ARG;
     }
 
+    mqtt_manager_client_api_lock();
     mqtt_manager_lock();
     if (!s_snapshot.connected || s_client == NULL) {
         mqtt_manager_unlock();
+        mqtt_manager_client_api_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    esp_mqtt_client_handle_t client = s_client;
+    mqtt_manager_unlock();
     const int message_id = esp_mqtt_client_enqueue(
-        s_client,
+        client,
         topic,
         payload,
         0,
@@ -408,9 +438,11 @@ esp_err_t mqtt_manager_publish(
         0,
         true);
     if (message_id >= 0) {
+        mqtt_manager_lock();
         mqtt_manager_set_status_locked("Test message queued");
+        mqtt_manager_unlock();
     }
-    mqtt_manager_unlock();
+    mqtt_manager_client_api_unlock();
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -422,20 +454,24 @@ esp_err_t mqtt_manager_publish_qos0(
         return ESP_ERR_INVALID_ARG;
     }
 
+    mqtt_manager_client_api_lock();
     mqtt_manager_lock();
     if (!s_snapshot.connected || s_client == NULL) {
         mqtt_manager_unlock();
+        mqtt_manager_client_api_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    esp_mqtt_client_handle_t client = s_client;
+    mqtt_manager_unlock();
     const int message_id = esp_mqtt_client_enqueue(
-        s_client,
+        client,
         topic,
         payload,
         0,
         0,
         0,
         true);
-    mqtt_manager_unlock();
+    mqtt_manager_client_api_unlock();
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
 }
 
