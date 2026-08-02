@@ -3,8 +3,10 @@
 !/.gitignore
 !/.gitattributes
 !/mosquitto-dev.conf
+!/CAN_ESP32_集成说明.md
 !/MCSDK_FOC_MIX/
 !/ESP32_LVGL/
+!/QtMqttSimpleControl/
 
 # Only the active ESP-IDF application is part of this archive.
 /ESP32_LVGL/*

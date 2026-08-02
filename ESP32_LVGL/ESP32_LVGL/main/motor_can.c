@@ -117,9 +117,10 @@ static bool motor_can_transceiver_self_test(void)
         released_level,
         passed ? "PASS" : "FAIL");
     if (!passed) {
-        ESP_LOGE(
+        ESP_LOGW(
             TAG,
-            "Local CAN path failed: verify Port1 GPIO5->TXD, GPIO6<-RXD, VCC/VIO/EN and S=LOW");
+            "Local CAN path check failed; live TWAI diagnostics remain enabled. "
+            "Verify Port1 GPIO5->TXD, GPIO6<-RXD, VCC/VIO/EN and S=LOW");
     }
     return passed;
 }
@@ -239,6 +240,9 @@ static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
         MotorCan_ReadS16(&frame->data[4]);
     s_snapshot.faults = MotorCan_ReadU16(&frame->data[6]);
     s_snapshot.received_frames++;
+    /* A valid bus frame is stronger evidence than the optional GPIO test. */
+    s_snapshot.transceiver_fault = false;
+    s_transceiver_test_passed = true;
     s_last_status_us = now_us;
     portEXIT_CRITICAL(&s_lock);
 }
@@ -348,9 +352,11 @@ static bool motor_can_service_bus_state(void)
     }
 
     uint32_t error_flags;
+    bool transceiver_fault;
     portENTER_CRITICAL(&s_lock);
     error_flags = s_pending_error_flags;
     s_pending_error_flags = 0U;
+    transceiver_fault = s_snapshot.transceiver_fault;
     portEXIT_CRITICAL(&s_lock);
     const int64_t now_us = esp_timer_get_time();
     if ((error_flags != 0U) &&
@@ -359,13 +365,16 @@ static bool motor_can_service_bus_state(void)
         s_last_error_log_us = now_us;
         ESP_LOGW(
             TAG,
-            "CAN error flags=0x%02lx ACK=%u BIT=%u FORM=%u STUFF=%u ARB=%u",
+            "CAN error flags=0x%02lx ACK=%u BIT=%u FORM=%u STUFF=%u ARB=%u "
+            "RXD=%d LOCAL=%s",
             (unsigned long)error_flags,
             (unsigned)decoded.ack_err,
             (unsigned)decoded.bit_err,
             (unsigned)decoded.form_err,
             (unsigned)decoded.stuff_err,
-            (unsigned)decoded.arb_lost);
+            (unsigned)decoded.arb_lost,
+            gpio_get_level(MOTOR_CAN_RX_GPIO),
+            transceiver_fault ? "WARN" : "PASS");
     }
 
     const bool bus_off = status.state == TWAI_ERROR_BUS_OFF;
@@ -377,9 +386,11 @@ static bool motor_can_service_bus_state(void)
         if (!s_recovery_requested) {
             ESP_LOGW(
                 TAG,
-                "Bus-off (TEC=%u REC=%u); starting recovery",
+                "Bus-off (TEC=%u REC=%u RXD=%d LOCAL=%s); starting recovery",
                 (unsigned)status.tx_error_count,
-                (unsigned)status.rx_error_count);
+                (unsigned)status.rx_error_count,
+                gpio_get_level(MOTOR_CAN_RX_GPIO),
+                transceiver_fault ? "WARN" : "PASS");
             if (twai_node_recover(s_twai_node) == ESP_OK) {
                 s_recovery_requested = true;
             }
@@ -419,12 +430,6 @@ static void motor_can_tx_task(void *argument)
     int64_t next_heartbeat_us = 0;
 
     for (;;) {
-        if (!s_transceiver_test_passed) {
-            vTaskDelayUntil(
-                &last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
-            continue;
-        }
-
         /*
          * Never dequeue a command or call the driver's TX-wait API while the
          * controller is Bus-Off.  The pending frame stays valid and is
@@ -444,7 +449,15 @@ static void motor_can_tx_task(void *argument)
         motor_can_request_t request;
         while (control_enabled &&
                xQueueReceive(s_control_queue, &request, 0) == pdTRUE) {
-            (void)motor_can_transmit(request.command, request.value);
+            if (motor_can_transmit(request.command, request.value) != ESP_OK) {
+                /*
+                 * START/STOP/MODE/ACK are edge-triggered UI actions.  Keep
+                 * the command at the head of the queue across a transient
+                 * TX timeout instead of silently losing the button press.
+                 */
+                (void)xQueueSendToFront(s_control_queue, &request, 0);
+                break;
+            }
         }
 
         bool send_speed;

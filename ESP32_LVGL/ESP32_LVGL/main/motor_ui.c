@@ -22,7 +22,8 @@
 #define UI_COLOR_RED              0xFF304FU
 #define UI_COLOR_YELLOW           0xFFB454U
 
-#define UI_PAGE_TOP               22
+#define UI_VIEWPORT_TOP           22
+#define UI_PAGE_TOP               0
 #define UI_PAGE_HEIGHT            218
 #define UI_CHART_POINTS           100U
 #define UI_SPEED_LIMIT_RPM        2600
@@ -32,6 +33,7 @@
 typedef enum
 {
     UI_PAGE_HOME = 0,
+    UI_PAGE_FEEDBACK,
     UI_PAGE_UART,
     UI_PAGE_CAN,
     UI_PAGE_WIFI,
@@ -44,7 +46,8 @@ typedef enum
 } ui_page_t;
 
 static const char *s_page_names[UI_PAGE_COUNT] = {
-    "HOME",
+    "MENU",
+    "FEEDBACK",
     "USART",
     "CAN",
     "WI-FI",
@@ -56,14 +59,25 @@ static const char *s_page_names[UI_PAGE_COUNT] = {
 };
 
 static lv_obj_t *s_pages[UI_PAGE_COUNT];
+static lv_obj_t *s_page_viewport;
 static ui_page_t s_current_page;
 static lv_obj_t *s_page_label;
 static lv_obj_t *s_uart_status_label;
 static lv_obj_t *s_can_status_label;
 static lv_obj_t *s_wifi_status_label;
 static lv_obj_t *s_mqtt_status_label;
-static lv_obj_t *s_active_transport_label;
 static lv_obj_t *s_home_state_label;
+static lv_obj_t *s_home_speed_measured_label;
+static lv_obj_t *s_home_speed_target_label;
+static lv_obj_t *s_home_position_current_label;
+static lv_obj_t *s_home_position_target_label;
+static lv_obj_t *s_home_current_label;
+static lv_obj_t *s_home_current_reference_label;
+static lv_obj_t *s_home_voltage_label;
+static lv_obj_t *s_home_mode_label;
+static lv_obj_t *s_home_run_label;
+static lv_obj_t *s_home_fault_label;
+static lv_obj_t *s_home_transport_label;
 static lv_obj_t *s_can_state_label;
 static lv_obj_t *s_link_diag_label;
 static lv_obj_t *s_baud_dropdown;
@@ -226,9 +240,10 @@ static void ui_show_page(ui_page_t page)
             lv_obj_add_flag(s_pages[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
+    s_page_animating = false;
     s_current_page = page;
     lv_label_set_text(s_page_label, s_page_names[page]);
-    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(s_page_viewport);
 }
 
 static void ui_page_animation_set_y(void *object, int32_t value)
@@ -254,7 +269,7 @@ static void ui_page_animation_in_completed(lv_anim_t *animation)
         }
     }
     s_page_animating = false;
-    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(s_page_viewport);
 }
 
 static void ui_animate_to_page(ui_page_t page, bool forward)
@@ -314,6 +329,13 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     lv_anim_set_completed_cb(
         &animation, ui_page_animation_in_completed);
     lv_anim_start(&animation);
+}
+
+static void ui_navigation_event(lv_event_t *event)
+{
+    const ui_page_t page =
+        (ui_page_t)(uintptr_t)lv_event_get_user_data(event);
+    ui_animate_to_page(page, page >= s_current_page);
 }
 
 static void ui_input_event(lv_event_t *event)
@@ -667,13 +689,6 @@ static void ui_mqtt_motor_event(lv_event_t *event)
     ui_mqtt_publish_test("motor/hmi/test/motor", payload);
 }
 
-static void ui_navigation_event(lv_event_t *event)
-{
-    const ui_page_t page =
-        (ui_page_t)(uintptr_t)lv_event_get_user_data(event);
-    ui_animate_to_page(page, page >= s_current_page);
-}
-
 static void ui_speed_slider_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
@@ -767,16 +782,16 @@ static lv_obj_t *ui_create_stop_button(
     return button;
 }
 
-static lv_obj_t *ui_create_navigation_button(
+static void ui_create_navigation_button(
     lv_obj_t *parent,
     const char *text,
     ui_page_t page,
     int32_t y)
 {
     lv_obj_t *button = lv_button_create(parent);
-    lv_obj_set_size(button, 280, 38);
-    lv_obj_set_pos(button, 4, y);
-    lv_obj_set_style_radius(button, 10, LV_PART_MAIN);
+    lv_obj_set_size(button, 286, 36);
+    lv_obj_set_pos(button, 1, y);
+    lv_obj_set_style_radius(button, 9, LV_PART_MAIN);
     lv_obj_set_style_bg_color(
         button, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
     lv_obj_add_event_cb(
@@ -785,22 +800,17 @@ static lv_obj_t *ui_create_navigation_button(
     lv_obj_t *label = ui_create_label(
         button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(label);
-    return button;
 }
 
-static void ui_create_home_page(lv_obj_t *parent)
+static void ui_create_navigation_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
-        parent, "MOTOR CONTROL", UI_COLOR_TEXT, &lv_font_montserrat_20);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
-
-    s_active_transport_label = ui_create_label(
-        parent, "ACTIVE: NONE", UI_COLOR_MUTED, &lv_font_montserrat_14);
-    lv_obj_align(s_active_transport_label, LV_ALIGN_TOP_MID, 0, 28);
+        parent, "PAGE SELECT", UI_COLOR_TEXT, &lv_font_montserrat_14);
+    lv_obj_set_pos(title, 8, 2);
 
     lv_obj_t *list = lv_obj_create(parent);
-    lv_obj_set_size(list, 304, 160);
-    lv_obj_set_pos(list, 8, 54);
+    lv_obj_set_size(list, 304, 188);
+    lv_obj_set_pos(list, 8, 26);
     lv_obj_set_style_bg_color(
         list, lv_color_hex(UI_COLOR_PANEL), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_MAIN);
@@ -808,21 +818,100 @@ static void ui_create_home_page(lv_obj_t *parent)
         list, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
     lv_obj_set_style_border_width(list, 1, LV_PART_MAIN);
     lv_obj_set_style_radius(list, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(list, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(list, 7, LV_PART_MAIN);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
 
-    ui_create_navigation_button(list, "USART", UI_PAGE_UART, 4);
-    ui_create_navigation_button(list, "CAN", UI_PAGE_CAN, 48);
-    ui_create_navigation_button(list, "WI-FI", UI_PAGE_WIFI, 92);
-    ui_create_navigation_button(list, "MQTT", UI_PAGE_MQTT, 136);
-    ui_create_navigation_button(list, "SPEED", UI_PAGE_SPEED, 180);
-    ui_create_navigation_button(list, "POSITION", UI_PAGE_POSITION, 224);
-    ui_create_navigation_button(
-        list, "SPEED CURVE", UI_PAGE_SPEED_CHART, 268);
-    ui_create_navigation_button(
-        list, "CURRENT CURVE", UI_PAGE_CURRENT_CHART, 312);
+    ui_create_navigation_button(list, "MOTOR FEEDBACK", UI_PAGE_FEEDBACK, 1);
+    ui_create_navigation_button(list, "USART", UI_PAGE_UART, 43);
+    ui_create_navigation_button(list, "CAN", UI_PAGE_CAN, 85);
+    ui_create_navigation_button(list, "WI-FI", UI_PAGE_WIFI, 127);
+    ui_create_navigation_button(list, "MQTT", UI_PAGE_MQTT, 169);
+    ui_create_navigation_button(list, "SPEED CONTROL", UI_PAGE_SPEED, 211);
+    ui_create_navigation_button(list, "POSITION CONTROL", UI_PAGE_POSITION, 253);
+    ui_create_navigation_button(list, "SPEED CURVE", UI_PAGE_SPEED_CHART, 295);
+    ui_create_navigation_button(list, "CURRENT CURVE", UI_PAGE_CURRENT_CHART, 337);
+}
+
+static void ui_create_feedback_page(lv_obj_t *parent)
+{
+    lv_obj_t *title = ui_create_label(
+        parent, "MOTOR FEEDBACK", UI_COLOR_TEXT, &lv_font_montserrat_14);
+    lv_obj_set_pos(title, 8, 1);
+
+    lv_obj_t *speed_panel = lv_obj_create(parent);
+    lv_obj_set_size(speed_panel, 151, 61);
+    lv_obj_set_pos(speed_panel, 6, 20);
+    ui_style_panel(speed_panel, 8);
+    lv_obj_set_style_pad_all(speed_panel, 6, LV_PART_MAIN);
+    lv_obj_t *label = ui_create_label(
+        speed_panel, "SPEED", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_set_pos(label, 0, 0);
+    s_home_speed_measured_label = ui_create_label(
+        speed_panel, "0 RPM", UI_COLOR_CYAN, &lv_font_montserrat_20);
+    lv_obj_set_pos(s_home_speed_measured_label, 0, 14);
+    s_home_speed_target_label = ui_create_label(
+        speed_panel, "TARGET 0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_speed_target_label, 0, 39);
+
+    lv_obj_t *position_panel = lv_obj_create(parent);
+    lv_obj_set_size(position_panel, 151, 61);
+    lv_obj_set_pos(position_panel, 163, 20);
+    ui_style_panel(position_panel, 8);
+    lv_obj_set_style_pad_all(position_panel, 6, LV_PART_MAIN);
+    label = ui_create_label(
+        position_panel, "POSITION", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_set_pos(label, 0, 0);
+    s_home_position_current_label = ui_create_label(
+        position_panel, "0.00 deg", UI_COLOR_CYAN, &lv_font_montserrat_20);
+    lv_obj_set_pos(s_home_position_current_label, 0, 14);
+    s_home_position_target_label = ui_create_label(
+        position_panel, "TARGET 0.00 deg", UI_COLOR_TEXT,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_position_target_label, 0, 39);
+
+    lv_obj_t *electrical_panel = lv_obj_create(parent);
+    lv_obj_set_size(electrical_panel, 308, 66);
+    lv_obj_set_pos(electrical_panel, 6, 85);
+    ui_style_panel(electrical_panel, 8);
+    lv_obj_set_style_pad_all(electrical_panel, 6, LV_PART_MAIN);
+    label = ui_create_label(
+        electrical_panel, "ELECTRICAL FEEDBACK", UI_COLOR_MUTED,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(label, 0, 0);
+    s_home_current_label = ui_create_label(
+        electrical_panel, "Iq     0 mA\nId     0 mA", UI_COLOR_TEXT,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_current_label, 0, 17);
+    s_home_current_reference_label = ui_create_label(
+        electrical_panel, "Iq*    0 mA\nId*    0 mA", UI_COLOR_GREEN,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_current_reference_label, 104, 17);
+    s_home_voltage_label = ui_create_label(
+        electrical_panel, "Uq     0 mV\nUd     0 mV", UI_COLOR_YELLOW,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_voltage_label, 208, 17);
+
+    lv_obj_t *status_panel = lv_obj_create(parent);
+    lv_obj_set_size(status_panel, 308, 57);
+    lv_obj_set_pos(status_panel, 6, 155);
+    ui_style_panel(status_panel, 8);
+    lv_obj_set_style_pad_all(status_panel, 6, LV_PART_MAIN);
+    s_home_mode_label = ui_create_label(
+        status_panel, "MODE SPEED", UI_COLOR_TEXT, &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_mode_label, 0, 1);
+    s_home_run_label = ui_create_label(
+        status_panel, "STATE STOPPED", UI_COLOR_YELLOW,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_run_label, 150, 1);
+    s_home_transport_label = ui_create_label(
+        status_panel, "LINK NONE", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_transport_label, 0, 25);
+    s_home_fault_label = ui_create_label(
+        status_panel, "FAULT 0x0000", UI_COLOR_GREEN,
+        &lv_font_montserrat_12);
+    lv_obj_set_pos(s_home_fault_label, 150, 25);
 }
 
 static void ui_create_uart_page(lv_obj_t *parent)
@@ -887,7 +976,7 @@ static void ui_create_can_page(lv_obj_t *parent)
         parent, "CAN COMMUNICATION", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 12);
     lv_obj_t *detail = ui_create_label(
-        parent, "PORT2  GPIO5/6  CLASSIC CAN 500K", UI_COLOR_MUTED,
+        parent, "J2/PORT1  GPIO5/6  CLASSIC CAN 500K", UI_COLOR_MUTED,
         &lv_font_montserrat_12);
     lv_obj_align_to(detail, title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
     s_stop_button = lv_button_create(parent);
@@ -992,8 +1081,9 @@ static void ui_create_wifi_page(lv_obj_t *parent)
     lv_obj_set_size(s_wifi_password_textarea, 204, 34);
     lv_obj_set_pos(s_wifi_password_textarea, 8, 76);
     lv_textarea_set_one_line(s_wifi_password_textarea, true);
-    lv_textarea_set_password_mode(s_wifi_password_textarea, true);
+    lv_textarea_set_password_mode(s_wifi_password_textarea, false);
     lv_textarea_set_max_length(s_wifi_password_textarea, 63U);
+    lv_textarea_set_text(s_wifi_password_textarea, "13579035076");
     lv_textarea_set_placeholder_text(
         s_wifi_password_textarea,
         "Wi-Fi password");
@@ -1548,7 +1638,8 @@ static void ui_handle_keys(void)
     s_key_stable = s_key_candidate;
 
     if ((pressed & BOARD_KEY_K0) != 0U) {
-        ui_animate_to_page(UI_PAGE_HOME, false);
+        /* K0 is an unconditional escape to the scrollable page selector. */
+        ui_show_page(UI_PAGE_HOME);
     } else if ((pressed & BOARD_KEY_K1) != 0U) {
         ui_animate_to_page(
             (ui_page_t)(
@@ -1615,11 +1706,29 @@ static void ui_update_motor_data(void)
             lv_color_hex(snapshot.can_link_active
                 ? UI_COLOR_GREEN : UI_COLOR_RED),
             LV_PART_MAIN);
+        const char *transport_name =
+            snapshot.transport == MOTOR_LINK_UART ? "USART"
+                : (snapshot.transport == MOTOR_LINK_CAN ? "CAN" : "NONE");
+        lv_label_set_text_fmt(
+            s_home_transport_label,
+            "LINK %s%s",
+            transport_name,
+            snapshot.transport == MOTOR_LINK_NONE ? ""
+                : (snapshot.link_active ? " ONLINE" : " OFFLINE"));
+        lv_obj_set_style_text_color(
+            s_home_transport_label,
+            lv_color_hex(snapshot.link_active
+                ? UI_COLOR_GREEN : UI_COLOR_RED),
+            LV_PART_MAIN);
         lv_label_set_text(
-            s_active_transport_label,
-            snapshot.transport == MOTOR_LINK_UART ? "ACTIVE: USART"
-                : (snapshot.transport == MOTOR_LINK_CAN
-                    ? "ACTIVE: CAN" : "ACTIVE: NONE"));
+            s_home_run_label,
+            snapshot.motor_fault ? "STATE FAULT"
+                : (snapshot.motor_running ? "STATE RUNNING" : "STATE STOPPED"));
+        lv_obj_set_style_text_color(
+            s_home_run_label,
+            lv_color_hex(snapshot.motor_fault ? UI_COLOR_RED
+                : (snapshot.motor_running ? UI_COLOR_GREEN : UI_COLOR_YELLOW)),
+            LV_PART_MAIN);
         lv_label_set_text(
             s_home_state_label,
             snapshot.transport == MOTOR_LINK_NONE ? "SELECT SERIAL OR CAN"
@@ -1645,6 +1754,16 @@ static void ui_update_motor_data(void)
             (unsigned long)snapshot.transmit_errors,
             snapshot.faults,
             snapshot.command_rejected ? "  CMD REJECTED" : "");
+        lv_label_set_text_fmt(
+            s_home_fault_label,
+            "FAULT 0x%04X%s",
+            snapshot.faults,
+            snapshot.command_rejected ? " CMD" : "");
+        lv_obj_set_style_text_color(
+            s_home_fault_label,
+            lv_color_hex((snapshot.faults != 0U || snapshot.command_rejected)
+                ? UI_COLOR_RED : UI_COLOR_GREEN),
+            LV_PART_MAIN);
     }
 
     if (!s_have_previous_snapshot ||
@@ -1652,6 +1771,10 @@ static void ui_update_motor_data(void)
             s_previous_snapshot.measured_speed_rpm) {
         lv_label_set_text_fmt(
             s_speed_actual_label,
+            "%d RPM",
+            snapshot.measured_speed_rpm);
+        lv_label_set_text_fmt(
+            s_home_speed_measured_label,
             "%d RPM",
             snapshot.measured_speed_rpm);
     }
@@ -1662,6 +1785,10 @@ static void ui_update_motor_data(void)
         lv_label_set_text_fmt(
             s_speed_reference_label,
             "%d RPM",
+            snapshot.reference_speed_rpm);
+        lv_label_set_text_fmt(
+            s_home_speed_target_label,
+            "TARGET %d RPM",
             snapshot.reference_speed_rpm);
         if (!s_speed_dragging && !s_speed_command_pending) {
             lv_slider_set_value(
@@ -1684,6 +1811,11 @@ static void ui_update_motor_data(void)
             "%3u.%02u deg",
             value / 100U,
             value % 100U);
+        lv_label_set_text_fmt(
+            s_home_position_current_label,
+            "%u.%02u deg",
+            value / 100U,
+            value % 100U);
     }
 
     if ((!s_have_previous_snapshot ||
@@ -1696,6 +1828,11 @@ static void ui_update_motor_data(void)
         lv_label_set_text_fmt(
             s_position_target_label,
             "%3u.%02u deg",
+            value / 100U,
+            value % 100U);
+        lv_label_set_text_fmt(
+            s_home_position_target_label,
+            "TARGET %u.%02u deg",
             value / 100U,
             value % 100U);
     }
@@ -1712,6 +1849,26 @@ static void ui_update_motor_data(void)
             snapshot.id_ma,
             snapshot.iq_reference_ma,
             snapshot.id_reference_ma);
+        lv_label_set_text_fmt(
+            s_home_current_label,
+            "Iq %5d mA\nId %5d mA",
+            snapshot.iq_ma,
+            snapshot.id_ma);
+        lv_label_set_text_fmt(
+            s_home_current_reference_label,
+            "Iq*%5d mA\nId*%5d mA",
+            snapshot.iq_reference_ma,
+            snapshot.id_reference_ma);
+    }
+
+    if (!s_have_previous_snapshot ||
+        snapshot.uq_mv != s_previous_snapshot.uq_mv ||
+        snapshot.ud_mv != s_previous_snapshot.ud_mv) {
+        lv_label_set_text_fmt(
+            s_home_voltage_label,
+            "Uq %5d mV\nUd %5d mV",
+            snapshot.uq_mv,
+            snapshot.ud_mv);
     }
 
     if (!s_have_previous_snapshot ||
@@ -1724,6 +1881,13 @@ static void ui_update_motor_data(void)
         lv_label_set_text(
             s_position_mode_button_label,
             speed_mode ? "ENABLE POS" : "POS ACTIVE");
+        lv_label_set_text(
+            s_home_mode_label,
+            speed_mode ? "MODE SPEED" : "MODE POSITION");
+        lv_obj_set_style_text_color(
+            s_home_mode_label,
+            lv_color_hex(speed_mode ? UI_COLOR_CYAN : UI_COLOR_GREEN),
+            LV_PART_MAIN);
     }
 
     ui_update_charts(&snapshot);
@@ -1883,8 +2047,27 @@ void motor_ui_create(lv_display_t *display)
         s_uart_status_label, s_can_status_label,
         LV_ALIGN_OUT_LEFT_MID, -12, 0);
 
+    /*
+     * Keep page animations inside one opaque clipping viewport.  Moving page
+     * objects directly on the root screen can expose stale scan lines above
+     * and below the content area when LVGL uses a partial display buffer.
+     */
+    s_page_viewport = lv_obj_create(screen);
+    lv_obj_set_size(s_page_viewport, 320, UI_PAGE_HEIGHT);
+    lv_obj_set_pos(s_page_viewport, 0, UI_VIEWPORT_TOP);
+    lv_obj_set_style_bg_color(
+        s_page_viewport, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_page_viewport, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_page_viewport, 0, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(s_page_viewport, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(s_page_viewport, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_page_viewport, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_page_viewport, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(s_page_viewport, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_page_viewport, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
-        s_pages[i] = lv_obj_create(screen);
+        s_pages[i] = lv_obj_create(s_page_viewport);
         lv_obj_set_size(s_pages[i], 320, UI_PAGE_HEIGHT);
         lv_obj_set_pos(s_pages[i], 0, UI_PAGE_TOP);
         lv_obj_set_style_bg_color(
@@ -1902,7 +2085,8 @@ void motor_ui_create(lv_display_t *display)
             s_pages[i], LV_OBJ_FLAG_SCROLLABLE);
     }
 
-    ui_create_home_page(s_pages[UI_PAGE_HOME]);
+    ui_create_navigation_page(s_pages[UI_PAGE_HOME]);
+    ui_create_feedback_page(s_pages[UI_PAGE_FEEDBACK]);
     ui_create_uart_page(s_pages[UI_PAGE_UART]);
     ui_create_can_page(s_pages[UI_PAGE_CAN]);
     ui_create_wifi_page(s_pages[UI_PAGE_WIFI]);
