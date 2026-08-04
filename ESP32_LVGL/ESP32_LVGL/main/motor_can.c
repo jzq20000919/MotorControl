@@ -73,6 +73,14 @@ static TaskHandle_t s_rx_task;
 static TaskHandle_t s_tx_task;
 static bool s_initialized;
 
+/**
+ * @brief 对外部 CAN 收发器执行 GPIO 电平连通性自检。
+ *
+ * Before TWAI takes ownership of the pins, drive TXD recessive/dominant and
+ * observe RXD. This is a diagnostic hint only: a failed local test does not
+ * prevent CAN startup because a valid received status frame is stronger proof.
+ * @return True if RXD follows the expected local levels.
+ */
 static bool motor_can_transceiver_self_test(void)
 {
     const gpio_config_t rx_config = {
@@ -125,6 +133,7 @@ static bool motor_can_transceiver_self_test(void)
     return passed;
 }
 
+/** @brief 在模块锁保护下递增共享发送错误计数。 */
 static void motor_can_record_tx_error(void)
 {
     portENTER_CRITICAL(&s_lock);
@@ -132,6 +141,17 @@ static void motor_can_record_tx_error(void)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 编码并发送一帧 CAN 命令帧。
+ *
+ * ESP-IDF 6 queues a pointer to the frame payload, so this function waits for
+ * prior and current transmissions to complete before reusing the persistent
+ * buffer. Motor-affecting commands are rejected unless CAN owns control.
+ *
+ * @param command Protocol command opcode.
+ * @param value Value encoded according to @p command.
+ * @return ESP_OK when transmission completed; otherwise a TWAI error.
+ */
 static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
 {
     if (command != MOTOR_CAN_CMD_NOP && command != MOTOR_CAN_CMD_PING) {
@@ -198,6 +218,12 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
     return result;
 }
 
+/**
+ * @brief 为 CAN TX 工作任务排队一个离散控制动作。
+ *
+ * If the bounded queue is full, discard its oldest entry so the newest user
+ * action takes precedence over stale UI operations.
+ */
 static void motor_can_queue_control(MotorCan_Command_t command, int32_t value)
 {
     if (s_control_queue == NULL) {
@@ -216,6 +242,10 @@ static void motor_can_queue_control(MotorCan_Command_t command, int32_t value)
     }
 }
 
+/**
+ * @brief 解码 CAN 状态帧 0x180 并刷新电机/链路状态。
+ * @param frame Self-contained received CAN frame with an 8-byte payload.
+ */
 static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
 {
     if (frame->data[0] != MOTOR_CAN_PROTOCOL_VERSION) {
@@ -247,6 +277,10 @@ static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 将 CAN 参考值/位置帧 0x181 解码到遥测快照中。
+ * @param frame Self-contained received CAN frame.
+ */
 static void motor_can_parse_references(const motor_can_rx_frame_t *frame)
 {
     portENTER_CRITICAL(&s_lock);
@@ -262,6 +296,10 @@ static void motor_can_parse_references(const motor_can_rx_frame_t *frame)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 将 CAN 电气电流帧 0x182 解码到遥测快照中。
+ * @param frame Self-contained received CAN frame.
+ */
 static void motor_can_parse_electrical(const motor_can_rx_frame_t *frame)
 {
     portENTER_CRITICAL(&s_lock);
@@ -273,6 +311,12 @@ static void motor_can_parse_electrical(const motor_can_rx_frame_t *frame)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief ISR 上下文的 TWAI 接收回调：将帧复制到 RTOS 队列。
+ *
+ * No frame parsing, logging or UI work is allowed here. The RX task performs
+ * all non-trivial work after the interrupt has returned.
+ */
 static bool IRAM_ATTR motor_can_rx_callback(
     twai_node_handle_t handle,
     const twai_rx_done_event_data_t *event_data,
@@ -300,6 +344,10 @@ static bool IRAM_ATTR motor_can_rx_callback(
     return task_woken == pdTRUE;
 }
 
+/**
+ * @brief ISR 上下文的 TWAI 错误回调：记录标志供后续任务处理。
+ * @return False because the callback does not wake a higher-priority task.
+ */
 static bool IRAM_ATTR motor_can_error_callback(
     twai_node_handle_t handle,
     const twai_error_event_data_t *event_data,
@@ -314,6 +362,11 @@ static bool IRAM_ATTR motor_can_error_callback(
     return false;
 }
 
+/**
+ * @brief 校验队列中 CAN 帧并按协议 ID 分发的接收任务。
+ * @param argument Unused task argument.
+ * @note Runs outside ISR context, so it may take the module critical section.
+ */
 static void motor_can_rx_task(void *argument)
 {
     (void)argument;
@@ -344,6 +397,10 @@ static void motor_can_rx_task(void *argument)
     }
 }
 
+/**
+ * @brief 更新 CAN 诊断信息，并启动/跟踪 Bus-Off 恢复流程。
+ * @return True only when the controller may safely send normal traffic.
+ */
 static bool motor_can_service_bus_state(void)
 {
     twai_node_status_t status;
@@ -405,6 +462,10 @@ static bool motor_can_service_bus_state(void)
     return true;
 }
 
+/**
+ * @brief 仅当没有更新目标覆盖时，重新标记发送失败的位置目标。
+ * @param position_cdeg Target value that failed to transmit.
+ */
 static void motor_can_restore_position_if_latest(uint16_t position_cdeg)
 {
     portENTER_CRITICAL(&s_lock);
@@ -414,6 +475,10 @@ static void motor_can_restore_position_if_latest(uint16_t position_cdeg)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 仅当没有更新目标覆盖时，重新标记发送失败的速度目标。
+ * @param speed_rpm Target value that failed to transmit.
+ */
 static void motor_can_restore_speed_if_latest(int16_t speed_rpm)
 {
     portENTER_CRITICAL(&s_lock);
@@ -423,6 +488,14 @@ static void motor_can_restore_speed_if_latest(int16_t speed_rpm)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 周期处理排队动作、最新目标和心跳的 CAN TX 工作任务。
+ *
+ * The task does not remove requests while Bus-Off. Discrete commands are put
+ * back at the queue head after transient TX failures; continuous speed/position
+ * targets are retried only if they are still the newest requested values.
+ * @param argument Unused task argument.
+ */
 static void motor_can_tx_task(void *argument)
 {
     (void)argument;
@@ -499,6 +572,7 @@ static void motor_can_tx_task(void *argument)
     }
 }
 
+/** @brief 删除已经创建的 CAN 专属 FreeRTOS 队列。 */
 static void motor_can_delete_queues(void)
 {
     if (s_rx_queue != NULL) {
@@ -511,6 +585,13 @@ static void motor_can_delete_queues(void)
     }
 }
 
+/**
+ * @brief 初始化 TWAI、过滤器、回调以及绑定核心的 CAN 工作任务。
+ *
+ * The hardware filter admits 0x180..0x183 feedback frames. Both worker tasks
+ * are pinned to Core 0 so UI work on Core 1 remains isolated.
+ * @return ESP_OK when the transport is ready, otherwise an allocation/TWAI error.
+ */
 esp_err_t motor_can_init(void)
 {
     if (s_initialized) {
@@ -649,6 +730,10 @@ esp_err_t motor_can_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 在销毁队列和 TWAI 节点前停止 CAN 工作任务。
+ * @note Ordering prevents tasks or callbacks from touching released resources.
+ */
 void motor_can_deinit(void)
 {
     if (!s_initialized) {
@@ -677,11 +762,16 @@ void motor_can_deinit(void)
     memset(&s_snapshot, 0, sizeof(s_snapshot));
 }
 
+/** @brief 返回 CAN 传输通道是否已经完成初始化。 */
 bool motor_can_is_initialized(void)
 {
     return s_initialized;
 }
 
+/**
+ * @brief 复制最新 CAN 遥测，并根据时间戳计算链路在线状态。
+ * @param[out] snapshot Destination snapshot; NULL is ignored.
+ */
 void motor_can_get_snapshot(motor_can_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
@@ -699,6 +789,10 @@ void motor_can_get_snapshot(motor_can_snapshot_t *snapshot)
          (MOTOR_CAN_LINK_TIMEOUT_MS * 1000LL));
 }
 
+/**
+ * @brief 授予或撤销 CAN 命令控制权。
+ * @param enabled True when CAN is the selected motor-control transport.
+ */
 void motor_can_set_control_enabled(bool enabled)
 {
     portENTER_CRITICAL(&s_lock);
@@ -713,11 +807,13 @@ void motor_can_set_control_enabled(bool enabled)
     }
 }
 
+/** @brief 排队一个 CAN 模式切换命令。 */
 void motor_can_set_mode(MotorCan_Mode_t mode)
 {
     motor_can_queue_control(MOTOR_CAN_CMD_SET_MODE, mode);
 }
 
+/** @brief 替换最新 CAN 速度目标，单位 rpm。 */
 void motor_can_set_speed_rpm(int16_t speed_rpm)
 {
     portENTER_CRITICAL(&s_lock);
@@ -726,6 +822,10 @@ void motor_can_set_speed_rpm(int16_t speed_rpm)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/**
+ * @brief 将角度环绕到 0..35999 后替换最新 CAN 位置目标。
+ * @param position_cdeg Requested angle in centi-degrees.
+ */
 void motor_can_set_position_cdeg(uint16_t position_cdeg)
 {
     portENTER_CRITICAL(&s_lock);
@@ -734,21 +834,25 @@ void motor_can_set_position_cdeg(uint16_t position_cdeg)
     portEXIT_CRITICAL(&s_lock);
 }
 
+/** @brief 排队一个 CAN 电机启动命令。 */
 void motor_can_start_motor(void)
 {
     motor_can_queue_control(MOTOR_CAN_CMD_START, 0);
 }
 
+/** @brief 排队一个 CAN 电机停止命令。 */
 void motor_can_stop_motor(void)
 {
     motor_can_queue_control(MOTOR_CAN_CMD_STOP, 0);
 }
 
+/** @brief 排队一个 CAN 故障确认命令。 */
 void motor_can_acknowledge_fault(void)
 {
     motor_can_queue_control(MOTOR_CAN_CMD_ACK_FAULT, 0);
 }
 
+/** @brief 排队一个 CAN 位置清零命令。 */
 void motor_can_zero_position(void)
 {
     motor_can_queue_control(MOTOR_CAN_CMD_ZERO_POSITION, 0);

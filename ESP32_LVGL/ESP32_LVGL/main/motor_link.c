@@ -7,11 +7,26 @@
 
 static motor_link_transport_t s_transport;
 
+/**
+ * @brief 初始化传输通道仲裁层。
+ *
+ * 本函数不打开 UART 或 CAN 硬件，仅清除当前控制通道。因此在成功连接前
+ * 调用控制命令不会对电机产生影响。
+ */
 void motor_link_init(void)
 {
     s_transport = MOTOR_LINK_NONE;
 }
 
+/**
+ * @brief 选择 UART 作为唯一的电机控制通道，并请求重新连接。
+ *
+ * 首次使用时初始化 UART。波特率请求成功后，启用 UART 命令输出并关闭 CAN
+ * 命令输出；若请求失败，则保留原来的活动通道。
+ *
+ * @param baud_rate 两端必须保持一致的 UART 波特率。
+ * @return 成功返回 ESP_OK，否则返回 UART 层的 ESP-IDF 错误码。
+ */
 esp_err_t motor_link_connect_uart(uint32_t baud_rate)
 {
     const motor_link_transport_t previous = s_transport;
@@ -30,6 +45,14 @@ esp_err_t motor_link_connect_uart(uint32_t baud_rate)
     return result;
 }
 
+/**
+ * @brief 选择 CAN 作为唯一的电机控制通道。
+ *
+ * CAN 硬件采用按需初始化。初始化成功后启用 CAN 命令输出并关闭 UART 命令
+ * 输出，防止两个接口同时下发冲突的电机目标值。
+ *
+ * @return 成功返回 ESP_OK，否则返回 CAN 初始化错误码。
+ */
 esp_err_t motor_link_connect_can(void)
 {
     const motor_link_transport_t previous = s_transport;
@@ -46,6 +69,12 @@ esp_err_t motor_link_connect_can(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 关闭并释放 UART 电机控制通道。
+ *
+ * 如果 UART 是当前活动通道，统一链路切换为 MOTOR_LINK_NONE；已选择的 CAN
+ * 通道不会被误操作。
+ */
 void motor_link_disconnect_uart(void)
 {
     motor_uart_set_control_enabled(false);
@@ -57,6 +86,12 @@ void motor_link_disconnect_uart(void)
     }
 }
 
+/**
+ * @brief 关闭并释放 CAN 电机控制通道。
+ *
+ * 如果 CAN 是当前活动通道，统一链路切换为 MOTOR_LINK_NONE；已选择的 UART
+ * 通道不会被误操作。
+ */
 void motor_link_disconnect_can(void)
 {
     motor_can_set_control_enabled(false);
@@ -68,6 +103,15 @@ void motor_link_disconnect_can(void)
     }
 }
 
+/**
+ * @brief 构造供 UI 与网络层使用的、与传输方式无关的状态快照。
+ *
+ * 函数将最新 UART 或 CAN 遥测复制到统一的 motor_link_snapshot_t。它不会等待
+ * 新报文，因此适合 UI 周期刷新；协议中不存在的字段保持为零，例如 UART v1
+ * 中没有 Id 电流参考值。
+ *
+ * @param[out] snapshot 目标快照；传入 NULL 时直接忽略。
+ */
 void motor_link_get_snapshot(motor_link_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
@@ -140,36 +184,59 @@ void motor_link_get_snapshot(motor_link_snapshot_t *snapshot)
     }
 }
 
+/**
+ * @brief 在当前选择的通道上排队发送控制模式请求。
+ * @param mode 请求的统一电机模式。
+ * @note 没有通道拥有控制权时，该调用会被忽略。
+ */
 void motor_link_set_mode(motor_link_mode_t mode)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_set_mode((MotorUart_Mode_t)mode);
     if (s_transport == MOTOR_LINK_CAN) motor_can_set_mode((MotorCan_Mode_t)mode);
 }
+
+/**
+ * @brief 在当前选择的通道上排队发送速度参考值。
+ * @param speed_rpm 请求的机械转速，单位 rpm。
+ */
 void motor_link_set_speed_rpm(int16_t speed_rpm)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_set_speed_rpm(speed_rpm);
     if (s_transport == MOTOR_LINK_CAN) motor_can_set_speed_rpm(speed_rpm);
 }
+
+/**
+ * @brief 在当前选择的通道上排队发送位置参考值。
+ * @param position_cdeg 请求的位置，单位 0.01°。
+ */
 void motor_link_set_position_cdeg(uint16_t position_cdeg)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_set_position_cdeg(position_cdeg);
     if (s_transport == MOTOR_LINK_CAN) motor_can_set_position_cdeg(position_cdeg);
 }
+
+/** @brief 在当前选择的通道上排队发送电机启动命令。 */
 void motor_link_start_motor(void)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_start_motor();
     if (s_transport == MOTOR_LINK_CAN) motor_can_start_motor();
 }
+
+/** @brief 在当前选择的通道上排队发送电机停止命令。 */
 void motor_link_stop_motor(void)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_stop_motor();
     if (s_transport == MOTOR_LINK_CAN) motor_can_stop_motor();
 }
+
+/** @brief 排队发送当前电机故障确认/复位请求。 */
 void motor_link_acknowledge_fault(void)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_acknowledge_fault();
     if (s_transport == MOTOR_LINK_CAN) motor_can_acknowledge_fault();
 }
+
+/** @brief 排队发送将当前机械位置设为零点的请求。 */
 void motor_link_zero_position(void)
 {
     if (s_transport == MOTOR_LINK_UART) motor_uart_zero_position();

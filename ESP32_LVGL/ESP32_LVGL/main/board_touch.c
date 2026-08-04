@@ -24,6 +24,17 @@ static bool s_address_little_endian = true;
 static lv_point_t s_last_point;
 static lv_indev_t *s_touch_indev;
 
+/**
+ * @brief 为 I2C 事务编码 32 位 CHSC5432 寄存器地址。
+ *
+ * Different controller revisions expose the same register map with different
+ * address byte order.  The order detected during initialisation is retained
+ * and used by all following reads.
+ *
+ * @param address Register address to encode.
+ * @param little_endian True for least-significant byte first.
+ * @param[out] bytes Four-byte destination buffer.
+ */
 static void touch_make_address(
     uint32_t address,
     bool little_endian,
@@ -42,6 +53,15 @@ static void touch_make_address(
     }
 }
 
+/**
+ * @brief 使用指定地址字节序读取触摸控制器寄存器数据。
+ *
+ * @param address CHSC5432 register address.
+ * @param little_endian Register-address byte order to test/use.
+ * @param[out] data Destination buffer for received bytes.
+ * @param length Number of bytes to read.
+ * @return ESP_OK when the combined I2C transaction succeeds.
+ */
 static esp_err_t touch_direct_read_order(
     uint32_t address,
     bool little_endian,
@@ -59,6 +79,13 @@ static esp_err_t touch_direct_read_order(
         20);
 }
 
+/**
+ * @brief 使用启动时选定的字节序读取 CHSC5432 寄存器。
+ * @param address Register address.
+ * @param[out] data Destination buffer.
+ * @param length Number of requested bytes.
+ * @return Result returned by the I2C master driver.
+ */
 static esp_err_t touch_direct_read(
     uint32_t address,
     uint8_t *data,
@@ -68,6 +95,16 @@ static esp_err_t touch_direct_read(
         address, s_address_little_endian, data, length);
 }
 
+/**
+ * @brief 检查候选控制器 ID 是否为无效总线返回值。
+ *
+ * An all-zero or all-0xFF response usually indicates an unresponsive device
+ * or an invalid register-address order, rather than a useful chip ID.
+ *
+ * @param id Bytes read from the ID register.
+ * @param length Number of bytes in @p id.
+ * @return True when the value is plausible.
+ */
 static bool touch_id_is_valid(const uint8_t *id, size_t length)
 {
     bool all_zero = true;
@@ -80,6 +117,16 @@ static bool touch_id_is_valid(const uint8_t *id, size_t length)
     return !all_zero && !all_ff;
 }
 
+/**
+ * @brief 将原始触摸坐标转换到 LVGL 显示坐标系。
+ *
+ * The compile-time swap/mirror options must match the LCD orientation set in
+ * main.c.  The final clamp protects LVGL from malformed points outside the
+ * 320 x 240 display.
+ *
+ * @param[in,out] x Horizontal coordinate.
+ * @param[in,out] y Vertical coordinate.
+ */
 static void touch_transform(uint16_t *x, uint16_t *y)
 {
     uint16_t transformed_x = *x;
@@ -112,6 +159,18 @@ static void touch_transform(uint16_t *x, uint16_t *y)
     *y = transformed_y;
 }
 
+/**
+ * @brief 读取并解码第一个有效的 CHSC5432 触摸点。
+ *
+ * The controller event report may contain multiple contacts; this UI uses the
+ * first valid contact because LVGL is registered as a single-pointer device.
+ * A failed I2C transaction, no contact, or an out-of-range point is reported
+ * as "not pressed" to the caller.
+ *
+ * @param[out] x Decoded, transformed X coordinate.
+ * @param[out] y Decoded, transformed Y coordinate.
+ * @return True when a valid pressed point was obtained.
+ */
 static bool touch_read_point(uint16_t *x, uint16_t *y)
 {
     uint8_t buffer[TOUCH_EVENT_DATA_SIZE] = {0U};
@@ -151,6 +210,16 @@ static bool touch_read_point(uint16_t *x, uint16_t *y)
     return true;
 }
 
+/**
+ * @brief 向 LVGL 输入子系统提供最新触摸状态。
+ *
+ * This callback is invoked by LVGL's input-read timer, not by application
+ * code.  Keeping the last valid point on release follows LVGL's pointer-input
+ * convention and lets widgets receive a consistent press/release sequence.
+ *
+ * @param indev LVGL input device requesting data; unused by this driver.
+ * @param[out] data LVGL structure to receive coordinate and pressed state.
+ */
 static void touch_read_callback(
     lv_indev_t *indev,
     lv_indev_data_t *data)
@@ -170,6 +239,19 @@ static void touch_read_callback(
     }
 }
 
+/**
+ * @brief 初始化 CHSC5432，并将其注册为 LVGL 指针输入设备。
+ *
+ * The caller must already have created the shared I2C master bus and hold the
+ * LVGL port lock.  The routine resets and probes the controller, detects its
+ * register-address byte order, then creates an LVGL input device polled at
+ * 100 Hz.
+ *
+ * @param i2c_bus Existing I2C master bus used by the board peripherals.
+ * @param display LVGL display associated with the touch coordinates.
+ * @param reset_callback Board-specific callback that drives touch reset.
+ * @return ESP_OK when the controller and LVGL input device are ready.
+ */
 esp_err_t board_touch_init(
     i2c_master_bus_handle_t i2c_bus,
     lv_display_t *display,
@@ -260,6 +342,10 @@ esp_err_t board_touch_init(
     return ESP_OK;
 }
 
+/**
+ * @brief 返回 board_touch_init() 创建的 LVGL 输入设备。
+ * @return Pointer input device, or NULL before successful initialisation.
+ */
 lv_indev_t *board_touch_get_indev(void)
 {
     return s_touch_indev;

@@ -118,6 +118,12 @@ static lv_display_t *s_lvgl_display;
 /**
  * @brief 从 XL9555 连续读取两个寄存器
  */
+/**
+ * @brief 在一次 I2C 事务中读取两个连续的 XL9555 寄存器。
+ * @param start_register 第一个寄存器地址。
+ * @param[out] values 接收两个寄存器值的缓冲区。
+ * @return ESP-IDF I2C 事务的执行结果。
+ */
 static esp_err_t xl9555_read_pair(uint8_t start_register,
                                   uint8_t values[2])
 {
@@ -133,6 +139,12 @@ static esp_err_t xl9555_read_pair(uint8_t start_register,
 
 /**
  * @brief 向 XL9555 连续写入两个寄存器
+ */
+/**
+ * @brief 在一次 I2C 事务中写入两个连续的 XL9555 寄存器。
+ * @param start_register 第一个寄存器地址。
+ * @param values 对应 @p start_register 及后继寄存器的值。
+ * @return ESP-IDF I2C 事务的执行结果。
  */
 static esp_err_t xl9555_write_pair(uint8_t start_register,
                                    const uint8_t values[2])
@@ -153,6 +165,12 @@ static esp_err_t xl9555_write_pair(uint8_t start_register,
 
 /**
  * @brief 初始化板载 I2C 和 XL9555
+ */
+/**
+ * @brief 初始化共享 I2C 总线和 XL9555 板载 I/O 扩展器。
+ *
+ * 扩展器负责 LCD 背光、触摸复位及两个物理按键。在改变输出方向前会先关闭
+ * 背光，避免上电过程中出现可见闪屏。
  */
 static void board_xl9555_init(void)
 {
@@ -253,6 +271,11 @@ static void board_xl9555_init(void)
 /**
  * @brief 控制 LCD 背光
  */
+/**
+ * @brief 通过 XL9555 P0.7 打开或关闭 LCD 背光。
+ * @param enabled 为 true 时点亮屏幕，为 false 时熄灭背光。
+ * @note 采用读-改-写方式，避免影响 XL9555 上的其它输出引脚。
+ */
 static void board_lcd_backlight_set(bool enabled)
 {
     uint8_t output_values[2];
@@ -278,6 +301,11 @@ static void board_lcd_backlight_set(bool enabled)
     );
 }
 
+/**
+ * @brief 通过 XL9555 P0.6 驱动低有效的 CHSC5432 复位线。
+ * @param asserted true 表示保持触摸芯片复位，false 表示释放复位。
+ * @return I2C 读写结果，供 board_touch.c 上报初始化失败。
+ */
 static esp_err_t board_touch_reset_set(bool asserted)
 {
     uint8_t output_values[2];
@@ -297,6 +325,11 @@ static esp_err_t board_touch_reset_set(bool asserted)
         XL9555_OUTPUT_PORT0, output_values);
 }
 
+/**
+ * @brief 将两个扩展器按键和 ESP32 BOOT 按键配置为输入。
+ *
+ * 软件消抖由 UI 层完成；本函数只配置电气方向和 BOOT 按键的内部上拉。
+ */
 void board_keys_init(void)
 {
     uint8_t config_values[2];
@@ -317,6 +350,13 @@ void board_keys_init(void)
     ESP_ERROR_CHECK(gpio_config(&boot_key_config));
 }
 
+/**
+ * @brief 采样全部物理按键并返回逻辑位掩码。
+ *
+ * 板上所有按键均为低电平有效。XL9555 读取失败时，其两个按键位保持清零，
+ * 但 BOOT 按键仍可正常读取。
+ * @return BOARD_KEY_K0、BOARD_KEY_K1、BOARD_KEY_K2 的按位或。
+ */
 uint8_t board_keys_read(void)
 {
     uint8_t input_values[2];
@@ -344,6 +384,13 @@ uint8_t board_keys_read(void)
 
 /**
  * @brief 初始化 ST7789 和 I80 八位并口
+ */
+/**
+ * @brief 在 8 位 I80 并口上创建并初始化 ST7789 面板。
+ *
+ * 本函数完成面向硬件的显示配置：本设计不读取 LCD 数据，因此 RD 始终保持高
+ * 电平；随后创建 ESP-IDF I80 总线、面板 IO 和 ST7789 对象。此处的 RGB565
+ * 字节序与屏幕方向必须和 LVGL、触摸坐标变换保持一致。
  */
 static void board_lcd_init(void)
 {
@@ -509,6 +556,13 @@ static void board_lcd_init(void)
 /**
  * @brief 初始化 LVGL 并注册 LCD
  */
+/**
+ * @brief 初始化 esp_lvgl_port，并将 LCD 注册为 LVGL 显示器。
+ *
+ * 工程使用单个全屏 RGB565 DMA 缓冲区以保证页面切换稳定。port 会在 Core 1
+ * 创建 LVGL 服务任务；在该任务以外修改 LVGL 对象前，应用代码必须调用
+ * lvgl_port_lock() 获取锁。
+ */
 static void board_lvgl_init(void)
 {
     ESP_LOGI(TAG, "Initializing LVGL port");
@@ -581,6 +635,12 @@ static void board_lvgl_init(void)
  * 主函数
  * ============================================================ */
 
+/**
+ * @brief 使用固件编译时间为系统时钟设置初始值。
+ *
+ * 板卡启动时没有 RTC 或网络校时依赖；该初值能让日志具有可用的时间基准，
+ * 直到后续加入真正的校时功能。
+ */
 static void board_set_time_from_build(void)
 {
     static const char *months = "JanFebMarAprMayJunJulAugSepOctNovDec";
@@ -620,12 +680,18 @@ static void board_set_time_from_build(void)
     (void)settimeofday(&now, NULL);
 }
 
+/**
+ * @brief 电机 HMI 的 ESP-IDF 应用入口函数。
+ *
+ * 初始化顺序经过设计：先建立 I/O 并熄灭屏幕；在网络组件分配内存前完成 LCD
+ * 与 LVGL 初始化；随后在持有 LVGL 锁时创建 UI 和触摸设备。首帧有机会绘制
+ * 完成后才打开背光。
+ */
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting DNESP32S3B Motor HMI");
     board_set_time_from_build();
     motor_link_init();
-
     /*
      * 先关闭背光，再初始化屏幕，
      * 可以减少启动过程中的白屏和闪屏。
@@ -633,10 +699,8 @@ void app_main(void)
     board_xl9555_init();
     board_keys_init();
     board_lcd_backlight_set(false);
-
     board_lcd_init();
     board_lvgl_init();
-
     /*
      * LVGL 的整屏缓冲区需要一块连续的 DMA 内部内存。
      * 先完成显示注册，避免 Wi-Fi 网络栈和 MQTT 任务提前

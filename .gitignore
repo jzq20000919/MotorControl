@@ -25,11 +25,33 @@
 # Generic generated build directories.
 **/build/
 **/build_*/
+**/build-*/
+**/Debug/
+**/Release/
 **/cmake-build-*/
 **/CMakeFiles/
 **/CMakeCache.txt
 **/cmake_install.cmake
 **/compile_commands.json
+
+# ESP-IDF generated output and dependency cache.  Recreate these with idf.py.
+/ESP32_LVGL/ESP32_LVGL/build/
+/ESP32_LVGL/ESP32_LVGL/managed_components/
+/ESP32_LVGL/ESP32_LVGL/sdkconfig.old
+/ESP32_LVGL/ESP32_LVGL/.idf/
+
+# Keil / ARM compiler temporary and generated files.
+**/*.crf
+**/*.d
+**/*.o
+**/*.obj
+**/*.pbi
+**/*.plg
+**/*.tmp
+**/*.sct
+**/*.iex
+**/*.tra
+**/*.sfr
 
 # STM32CubeMX / Motor Control Workbench temporary and backup files.
 /MCSDK_FOC_MIX/*.bak
@@ -51,3 +73,11 @@
 # Qt generated user and build state.
 /MCSDK_FOC_MIX/QtFocMixControl/*.user
 /MCSDK_FOC_MIX/QtFocMixControl/.qtc_clangd/
+
+# Qt Creator / CMake generated files for the standalone MQTT control client.
+/QtMqttSimpleControl/build/
+/QtMqttSimpleControl/build_verify/
+/QtMqttSimpleControl/.qtc_clangd/
+/QtMqttSimpleControl/**/*.user
+/QtMqttSimpleControl/**/*.user.*
+/QtMqttSimpleControl/**/.moc/

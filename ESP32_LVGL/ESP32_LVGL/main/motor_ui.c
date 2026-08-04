@@ -173,6 +173,7 @@ static lv_obj_t *ui_create_label(
     return label;
 }
 
+/** @brief 为 LVGL 对象应用统一的圆角面板样式。 */
 static void ui_style_panel(lv_obj_t *object, int32_t radius)
 {
     lv_obj_set_style_bg_color(
@@ -186,11 +187,13 @@ static void ui_style_panel(lv_obj_t *object, int32_t radius)
     lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
 }
 
+/** @brief 返回有符号 32 位整数的绝对值。 */
 static int32_t ui_abs_i32(int32_t value)
 {
     return value < 0 ? -value : value;
 }
 
+/** @brief 将 UI 速度值限制在电机协议允许的 rpm 范围内。 */
 static int16_t ui_clamp_speed(int32_t speed)
 {
     if (speed > UI_SPEED_LIMIT_RPM) {
@@ -202,6 +205,7 @@ static int16_t ui_clamp_speed(int32_t speed)
     return (int16_t)speed;
 }
 
+/** @brief Wi-Fi 文本输入结束后隐藏共用软键盘。 */
 static void ui_hide_wifi_keyboard(void)
 {
     if (s_wifi_keyboard != NULL) {
@@ -210,6 +214,7 @@ static void ui_hide_wifi_keyboard(void)
     }
 }
 
+/** @brief MQTT URI 输入结束后隐藏共用软键盘。 */
 static void ui_hide_mqtt_keyboard(void)
 {
     if (s_mqtt_keyboard != NULL) {
@@ -218,6 +223,10 @@ static void ui_hide_mqtt_keyboard(void)
     }
 }
 
+/**
+ * @brief 不使用动画，直接显示 @p page 指定的页面。
+ * @note Used for initial state and animation completion; validates page index.
+ */
 static void ui_show_page(ui_page_t page)
 {
     if (page >= UI_PAGE_COUNT) {
@@ -246,11 +255,13 @@ static void ui_show_page(ui_page_t page)
     lv_obj_invalidate(lv_screen_active());
 }
 
+/** @brief LVGL 动画执行函数：更新页面对象的纵向位置。 */
 static void ui_page_animation_set_y(void *object, int32_t value)
 {
     lv_obj_set_y((lv_obj_t *)object, value);
 }
 
+/** @brief 页面滑出动画完成后隐藏旧页面。 */
 static void ui_page_animation_out_completed(lv_anim_t *animation)
 {
     lv_obj_t *page = lv_anim_get_user_data(animation);
@@ -258,6 +269,7 @@ static void ui_page_animation_out_completed(lv_anim_t *animation)
     lv_obj_set_y(page, UI_PAGE_TOP);
 }
 
+/** @brief 新页面滑入动画完成后收尾页面状态。 */
 static void ui_page_animation_in_completed(lv_anim_t *animation)
 {
     lv_obj_t *page = lv_anim_get_user_data(animation);
@@ -272,6 +284,10 @@ static void ui_page_animation_in_completed(lv_anim_t *animation)
     lv_obj_invalidate(lv_screen_active());
 }
 
+/**
+ * @brief 将当前页面以纵向动画切换到 @p page。
+ * @param forward True for next-page direction; false for previous-page direction.
+ */
 static void ui_animate_to_page(ui_page_t page, bool forward)
 {
     if (page >= UI_PAGE_COUNT || page == s_current_page ||
@@ -342,6 +358,7 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     lv_anim_start(&animation);
 }
 
+/** @brief 处理导航按钮点击，并启动目标页面切换动画。 */
 static void ui_navigation_event(lv_event_t *event)
 {
     const ui_page_t page =
@@ -349,6 +366,10 @@ static void ui_navigation_event(lv_event_t *event)
     ui_animate_to_page(page, page >= s_current_page);
 }
 
+/**
+ * @brief 将获得焦点的文本框事件转发给对应软键盘。
+ * @note Runs in LVGL context and must not perform blocking network work.
+ */
 static void ui_input_event(lv_event_t *event)
 {
     lv_indev_t *indev = lv_event_get_user_data(event);
@@ -396,6 +417,7 @@ static void ui_input_event(lv_event_t *event)
     motor_link_set_speed_rpm(s_pending_speed_rpm);
 }
 
+/** @brief 点击对应 UI 按钮时请求切换到速度控制模式。 */
 static void ui_speed_mode_event(lv_event_t *event)
 {
     (void)event;
@@ -403,6 +425,7 @@ static void ui_speed_mode_event(lv_event_t *event)
     motor_link_start_motor();
 }
 
+/** @brief 点击对应 UI 按钮时请求切换到位置控制模式。 */
 static void ui_position_mode_event(lv_event_t *event)
 {
     (void)event;
@@ -410,6 +433,7 @@ static void ui_position_mode_event(lv_event_t *event)
     motor_link_start_motor();
 }
 
+/** @brief 从 UI 请求停止电机，由当前活动的 motor_link 通道发送。 */
 static void ui_stop_event(lv_event_t *event)
 {
     (void)event;
@@ -420,12 +444,17 @@ static void ui_stop_event(lv_event_t *event)
     motor_link_stop_motor();
 }
 
+/** @brief 请求确认/复位 STM32 上报的电机故障。 */
 static void ui_ack_fault_event(lv_event_t *event)
 {
     (void)event;
     motor_link_acknowledge_fault();
 }
 
+/**
+ * @brief 读取选定的 UART 波特率并请求启用 UART 控制。
+ * @note Connection completion is asynchronous; status is shown by periodic refresh.
+ */
 static void ui_uart_reconnect_event(lv_event_t *event)
 {
     (void)event;
@@ -446,6 +475,7 @@ static void ui_uart_reconnect_event(lv_event_t *event)
     }
 }
 
+/** @brief 初始化/选择 CAN 作为唯一活动电机控制通道。 */
 static void ui_can_connect_event(lv_event_t *event)
 {
     (void)event;
@@ -458,6 +488,7 @@ static void ui_can_connect_event(lv_event_t *event)
     }
 }
 
+/** @brief 通过 UI 操作关闭 UART 控制并释放其资源。 */
 static void ui_uart_disconnect_event(lv_event_t *event)
 {
     (void)event;
@@ -467,6 +498,7 @@ static void ui_uart_disconnect_event(lv_event_t *event)
     lv_label_set_text(s_home_state_label, "USART DISCONNECTED");
 }
 
+/** @brief 通过 UI 操作关闭 CAN 控制并释放其资源。 */
 static void ui_can_disconnect_event(lv_event_t *event)
 {
     (void)event;
@@ -476,6 +508,7 @@ static void ui_can_disconnect_event(lv_event_t *event)
     lv_label_set_text(s_can_state_label, "CAN DISCONNECTED");
 }
 
+/** @brief 刷新当前选中 AP 的 Wi-Fi 页面详情文本。 */
 static void ui_wifi_update_selected_detail(void)
 {
     if (s_wifi_detail_label == NULL) {
@@ -509,12 +542,14 @@ static void ui_wifi_update_selected_detail(void)
         s_wifi_network_secured[selected] ? "SECURED" : "OPEN");
 }
 
+/** @brief Wi-Fi 网络列表选择变化时更新选中 AP 索引。 */
 static void ui_wifi_network_event(lv_event_t *event)
 {
     (void)event;
     ui_wifi_update_selected_detail();
 }
 
+/** @brief Wi-Fi 密码输入框获得焦点时显示软键盘。 */
 static void ui_wifi_password_event(lv_event_t *event)
 {
     (void)event;
@@ -525,6 +560,7 @@ static void ui_wifi_password_event(lv_event_t *event)
     lv_obj_move_foreground(s_wifi_keyboard);
 }
 
+/** @brief Wi-Fi 键盘完成或取消操作后关闭软键盘。 */
 static void ui_wifi_keyboard_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
@@ -533,6 +569,7 @@ static void ui_wifi_keyboard_event(lv_event_t *event)
     }
 }
 
+/** @brief 启动异步 AP 扫描，扫描结果由 UI 定时器负责显示。 */
 static void ui_wifi_scan_event(lv_event_t *event)
 {
     (void)event;
@@ -545,6 +582,9 @@ static void ui_wifi_scan_event(lv_event_t *event)
     }
 }
 
+/**
+ * @brief 将选中的 SSID 与输入密码提交给异步 Wi-Fi 管理器。
+ */
 static void ui_wifi_connect_event(lv_event_t *event)
 {
     (void)event;
@@ -582,6 +622,7 @@ static void ui_wifi_connect_event(lv_event_t *event)
     }
 }
 
+/** @brief 请求用户主动断开 Wi-Fi，并关闭自动重连。 */
 static void ui_wifi_disconnect_event(lv_event_t *event)
 {
     (void)event;
@@ -595,6 +636,7 @@ static void ui_wifi_disconnect_event(lv_event_t *event)
     }
 }
 
+/** @brief MQTT Broker URI 输入框获得焦点时显示软键盘。 */
 static void ui_mqtt_uri_event(lv_event_t *event)
 {
     (void)event;
@@ -603,6 +645,7 @@ static void ui_mqtt_uri_event(lv_event_t *event)
     lv_obj_move_foreground(s_mqtt_keyboard);
 }
 
+/** @brief MQTT 键盘完成或取消操作后关闭软键盘。 */
 static void ui_mqtt_keyboard_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
@@ -611,6 +654,7 @@ static void ui_mqtt_keyboard_event(lv_event_t *event)
     }
 }
 
+/** @brief 通过 mqtt_manager 校验 Broker URI 并排队连接任务。 */
 static void ui_mqtt_connect_event(lv_event_t *event)
 {
     (void)event;
@@ -634,6 +678,7 @@ static void ui_mqtt_connect_event(lv_event_t *event)
     }
 }
 
+/** @brief 根据 UI 操作排队执行 MQTT 客户端断开。 */
 static void ui_mqtt_disconnect_event(lv_event_t *event)
 {
     (void)event;
@@ -647,6 +692,11 @@ static void ui_mqtt_disconnect_event(lv_event_t *event)
     }
 }
 
+/**
+ * @brief 发布一条 JSON 测试消息，并在 UI 标签中显示结果。
+ * @param topic Destination MQTT topic.
+ * @param payload Null-terminated JSON test payload.
+ */
 static void ui_mqtt_publish_test(
     const char *topic,
     const char *payload)
@@ -659,6 +709,7 @@ static void ui_mqtt_publish_test(
     }
 }
 
+/** @brief 从 MQTT 页面发布 Broker 连通性测试消息。 */
 static void ui_mqtt_ping_event(lv_event_t *event)
 {
     (void)event;
@@ -667,6 +718,7 @@ static void ui_mqtt_ping_event(lv_event_t *event)
         "PING from ESP32-S3");
 }
 
+/** @brief 发布当前 Wi-Fi 状态的 JSON 快照测试消息。 */
 static void ui_mqtt_wifi_event(lv_event_t *event)
 {
     (void)event;
@@ -682,6 +734,7 @@ static void ui_mqtt_wifi_event(lv_event_t *event)
     ui_mqtt_publish_test("motor/hmi/test/wifi", payload);
 }
 
+/** @brief 发布当前电机状态的 JSON 快照测试消息。 */
 static void ui_mqtt_motor_event(lv_event_t *event)
 {
     (void)event;
@@ -700,6 +753,12 @@ static void ui_mqtt_motor_event(lv_event_t *event)
     ui_mqtt_publish_test("motor/hmi/test/motor", payload);
 }
 
+/**
+ * @brief 拖动时更新速度文本，释放时提交最终 rpm 目标值。
+ *
+ * Avoiding per-pixel command transmission prevents the serial bus and motor
+ * controller from being flooded with intermediate slider values.
+ */
 static void ui_speed_slider_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
@@ -726,6 +785,9 @@ static void ui_speed_slider_event(lv_event_t *event)
     }
 }
 
+/**
+ * @brief 拖动时更新位置文本，释放时提交最终角度目标值。
+ */
 static void ui_position_slider_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
@@ -793,6 +855,12 @@ static lv_obj_t *ui_create_stop_button(
     return button;
 }
 
+/**
+ * @brief 创建带统一样式的导航按钮，并绑定目标页面事件。
+ * @param parent Page that owns the button.
+ * @param text Visible button caption.
+ * @param destination Page selected when clicked.
+ */
 static void ui_create_navigation_button(
     lv_obj_t *parent,
     const char *text,
@@ -813,6 +881,7 @@ static void ui_create_navigation_button(
     lv_obj_center(label);
 }
 
+/** @brief 创建包含全部功能子页面入口的首页。 */
 static void ui_create_navigation_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -845,6 +914,7 @@ static void ui_create_navigation_page(lv_obj_t *parent)
     ui_create_navigation_button(list, "CURRENT CURVE", UI_PAGE_CURRENT_CHART, 337);
 }
 
+/** @brief 创建实时电机反馈/状态页面及其数值标签。 */
 static void ui_create_feedback_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -925,6 +995,7 @@ static void ui_create_feedback_page(lv_obj_t *parent)
     lv_obj_set_pos(s_home_fault_label, 150, 25);
 }
 
+/** @brief 创建 UART 通道配置与诊断页面。 */
 static void ui_create_uart_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -981,6 +1052,7 @@ static void ui_create_uart_page(lv_obj_t *parent)
     lv_obj_align(s_home_state_label, LV_ALIGN_BOTTOM_MID, 0, -7);
 }
 
+/** @brief 创建 CAN 通道配置与诊断页面。 */
 static void ui_create_can_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -1061,6 +1133,7 @@ static lv_obj_t *ui_create_wifi_action_button(
     return button;
 }
 
+/** @brief 创建 Wi-Fi 扫描、网络选择及密码输入页面。 */
 static void ui_create_wifi_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -1151,6 +1224,7 @@ static void ui_create_wifi_page(lv_obj_t *parent)
     lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
+/** @brief 创建 MQTT Broker 配置与测试发布页面。 */
 static void ui_create_mqtt_page(lv_obj_t *parent)
 {
     lv_obj_t *title = ui_create_label(
@@ -1233,6 +1307,7 @@ static void ui_create_mqtt_page(lv_obj_t *parent)
     lv_obj_add_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
+/** @brief 创建速度模式控制、滑块及当前目标标签。 */
 static void ui_create_speed_page(lv_obj_t *parent)
 {
     lv_obj_t *actual_card = lv_obj_create(parent);
@@ -1293,6 +1368,7 @@ static void ui_create_speed_page(lv_obj_t *parent)
         s_speed_slider, ui_speed_slider_event, LV_EVENT_ALL, NULL);
 }
 
+/** @brief 创建位置模式控制、滑块及目标角度标签。 */
 static void ui_create_position_page(lv_obj_t *parent)
 {
     lv_obj_t *current_card = lv_obj_create(parent);
@@ -1354,6 +1430,7 @@ static void ui_create_position_page(lv_obj_t *parent)
         s_position_slider, ui_position_slider_event, LV_EVENT_ALL, NULL);
 }
 
+/** @brief 为图表对象应用统一深色主题样式和网格设置。 */
 static void ui_style_chart(lv_obj_t *chart)
 {
     lv_obj_set_style_bg_color(
@@ -1374,6 +1451,13 @@ static void ui_style_chart(lv_obj_t *chart)
     lv_chart_set_div_line_count(chart, 5, 5);
 }
 
+/**
+ * @brief 在图表旁创建固定的顶部/中部/底部刻度标签。
+ * @param parent Page owning the label objects.
+ * @param top_text Text for the upper scale marker.
+ * @param middle_text Text for the centre scale marker.
+ * @param bottom_text Text for the lower scale marker.
+ */
 static void ui_create_chart_axis_labels(
     lv_obj_t *parent,
     lv_obj_t **top,
@@ -1400,6 +1484,7 @@ static void ui_create_chart_axis_labels(
     lv_obj_set_pos(*bottom, 0, 178);
 }
 
+/** @brief 创建绘制实际电机转速随时间变化曲线的页面。 */
 static void ui_create_speed_chart_page(lv_obj_t *parent)
 {
     s_speed_chart_value_label = ui_create_label(
@@ -1446,6 +1531,7 @@ static void ui_create_speed_chart_page(lv_obj_t *parent)
     lv_obj_align(keys_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 }
 
+/** @brief 创建绘制 d/q 轴电流遥测曲线的页面。 */
 static void ui_create_current_chart_page(lv_obj_t *parent)
 {
     s_current_chart_value_label = ui_create_label(
@@ -1504,6 +1590,10 @@ static void ui_create_current_chart_page(lv_obj_t *parent)
     lv_obj_align(display_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 }
 
+/**
+ * @brief 选择足以容纳最新电流数据的对称图表量程。
+ * @return Positive full-scale current in milliamperes.
+ */
 static int32_t ui_select_current_scale(
     int32_t measured,
     int32_t reference)
@@ -1531,6 +1621,10 @@ static int32_t ui_select_current_scale(
     return 30000;
 }
 
+/**
+ * @brief 以受限刷新频率将最新遥测值写入速度/电流图表。
+ * @param snapshot Unified motor telemetry sampled by the UI timer.
+ */
 static void ui_update_charts(const motor_link_snapshot_t *snapshot)
 {
     if (lv_tick_elaps(s_last_chart_tick) < 60U) {
@@ -1625,6 +1719,9 @@ static void ui_update_charts(const motor_link_snapshot_t *snapshot)
         snapshot->iq_ma);
 }
 
+/**
+ * @brief 对板载按键去抖，并将稳定按键映射为首页/上一页/下一页动作。
+ */
 static void ui_handle_keys(void)
 {
     const uint8_t raw = board_keys_read();
@@ -1664,6 +1761,13 @@ static void ui_handle_keys(void)
     }
 }
 
+/**
+ * @brief 轮询 motor_link、刷新电机控件，并重发尚未确认的目标值。
+ *
+ * UI-owned pending commands are retried only when telemetry has not yet echoed
+ * the requested state. The function never waits for I/O and therefore remains
+ * safe in the LVGL periodic timer.
+ */
 static void ui_update_motor_data(void)
 {
     motor_link_snapshot_t snapshot;
@@ -1906,6 +2010,7 @@ static void ui_update_motor_data(void)
     s_have_previous_snapshot = true;
 }
 
+/** @brief 根据管理器快照版本刷新 Wi-Fi 状态标签和 AP 列表。 */
 static void ui_update_wifi_data(void)
 {
     wifi_manager_snapshot_t snapshot;
@@ -1972,6 +2077,7 @@ static void ui_update_wifi_data(void)
     s_wifi_revision = snapshot.revision;
 }
 
+/** @brief 管理器快照版本变化时刷新 MQTT 状态标签。 */
 static void ui_update_mqtt_data(void)
 {
     mqtt_manager_snapshot_t snapshot;
@@ -2004,6 +2110,10 @@ static void ui_update_mqtt_data(void)
     s_mqtt_revision = snapshot.revision;
 }
 
+/**
+ * @brief LVGL 周期定时器回调：刷新电机、Wi-Fi 与 MQTT 页面。
+ * @param timer Timer instance; unused because all UI state is module-global.
+ */
 static void ui_timer_callback(lv_timer_t *timer)
 {
     (void)timer;
@@ -2012,12 +2122,20 @@ static void ui_timer_callback(lv_timer_t *timer)
     ui_update_mqtt_data();
 }
 
+/** @brief 专用于按键轮询和去抖的 LVGL 周期定时器回调。 */
 static void ui_key_timer_callback(lv_timer_t *timer)
 {
     (void)timer;
     ui_handle_keys();
 }
 
+/**
+ * @brief 创建全部常驻 LVGL 页面、共用状态栏及刷新定时器。
+ *
+ * Pages are pre-created inside an opaque viewport so slide animation never
+ * exposes off-page objects. The caller must hold the LVGL port lock.
+ * @param display Display used by the UI; NULL leaves construction aborted.
+ */
 void motor_ui_create(lv_display_t *display)
 {
     if (display == NULL) {
@@ -2123,6 +2241,10 @@ void motor_ui_create(lv_display_t *display)
     /* The LVGL port task performs the invalidated full-screen refresh. */
 }
 
+/**
+ * @brief 将已注册的 LVGL 指针设备绑定到创建好的 UI 屏幕。
+ * @param indev Touch/encoder device; NULL is ignored.
+ */
 void motor_ui_attach_input(lv_indev_t *indev)
 {
     if (indev == NULL) {

@@ -47,6 +47,7 @@ static char s_last_error[80];
 static mqtt_manager_message_callback_t s_message_callback;
 static void *s_message_callback_context;
 
+/** @brief 获取保护 MQTT 状态和回调注册信息的互斥锁。 */
 static void mqtt_manager_lock(void)
 {
     if (s_lock != NULL) {
@@ -54,6 +55,7 @@ static void mqtt_manager_lock(void)
     }
 }
 
+/** @brief 释放保护 MQTT 状态和回调注册信息的互斥锁。 */
 static void mqtt_manager_unlock(void)
 {
     if (s_lock != NULL) {
@@ -61,6 +63,7 @@ static void mqtt_manager_unlock(void)
     }
 }
 
+/** @brief 串行化 ESP-MQTT 客户端 API 调用和客户端销毁操作。 */
 static void mqtt_manager_client_api_lock(void)
 {
     if (s_client_api_lock != NULL) {
@@ -68,6 +71,7 @@ static void mqtt_manager_client_api_lock(void)
     }
 }
 
+/** @brief 释放 ESP-MQTT 客户端 API 串行化互斥锁。 */
 static void mqtt_manager_client_api_unlock(void)
 {
     if (s_client_api_lock != NULL) {
@@ -75,12 +79,14 @@ static void mqtt_manager_client_api_unlock(void)
     }
 }
 
+/** @brief 设置状态文本并递增版本号；调用者必须持有 s_lock。 */
 static void mqtt_manager_set_status_locked(const char *status)
 {
     strlcpy(s_snapshot.status, status, sizeof(s_snapshot.status));
     s_snapshot.revision++;
 }
 
+/** @brief 将非空终止的 ESP-MQTT 事件文本复制为安全 C 字符串。 */
 static void mqtt_manager_copy_event_text(
     char *destination,
     size_t destination_size,
@@ -102,6 +108,12 @@ static void mqtt_manager_copy_event_text(
     destination[length] = '\0';
 }
 
+/**
+ * @brief 将 ESP-MQTT 生命周期/数据事件转换为管理器状态和回调。
+ *
+ * Event payload text is copied before being exposed, because the MQTT library's
+ * data buffers are only valid for the duration of the callback.
+ */
 static void mqtt_manager_event_handler(
     void *handler_argument,
     esp_event_base_t event_base,
@@ -277,6 +289,9 @@ static void mqtt_manager_event_handler(
     }
 }
 
+/**
+ * @brief 停止并销毁活动 MQTT 客户端，避免与发布调用竞争。
+ */
 static void mqtt_manager_stop_client(void)
 {
     mqtt_manager_client_api_lock();
@@ -292,6 +307,10 @@ static void mqtt_manager_stop_client(void)
     mqtt_manager_client_api_unlock();
 }
 
+/**
+ * @brief 串行执行 MQTT 连接/断开命令的工作任务。
+ * @param argument Unused task argument.
+ */
 static void mqtt_manager_worker(void *argument)
 {
     (void)argument;
@@ -363,6 +382,10 @@ static void mqtt_manager_worker(void *argument)
     }
 }
 
+/**
+ * @brief 创建管理器同步对象、唯一客户端 ID 及工作任务。
+ * @return ESP_OK on success, otherwise MAC lookup or allocation failure.
+ */
 esp_err_t mqtt_manager_init(void)
 {
     if (s_lock != NULL) {
@@ -417,6 +440,10 @@ esp_err_t mqtt_manager_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 校验并排队一个 MQTT Broker 连接请求。
+ * @return ESP_OK when queued; actual connection result is delivered asynchronously.
+ */
 esp_err_t mqtt_manager_connect_async(const char *broker_uri)
 {
     if (broker_uri == NULL ||
@@ -455,6 +482,7 @@ esp_err_t mqtt_manager_connect_async(const char *broker_uri)
     return ESP_OK;
 }
 
+/** @brief 为管理工作任务排队一个客户端关闭请求。 */
 esp_err_t mqtt_manager_disconnect_async(void)
 {
     const mqtt_manager_command_t command = {
@@ -468,6 +496,10 @@ esp_err_t mqtt_manager_disconnect_async(void)
         : ESP_ERR_TIMEOUT;
 }
 
+/**
+ * @brief 通过活动 MQTT 客户端排队一条 QoS 1 发布消息。
+ * @return ESP_ERR_INVALID_STATE when no broker connection is active.
+ */
 esp_err_t mqtt_manager_publish(
     const char *topic,
     const char *payload)
@@ -502,6 +534,7 @@ esp_err_t mqtt_manager_publish(
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
 }
 
+/** @brief 通过活动客户端排队一条 QoS 0 遥测发布消息。 */
 esp_err_t mqtt_manager_publish_qos0(
     const char *topic,
     const char *payload)
@@ -531,6 +564,10 @@ esp_err_t mqtt_manager_publish_qos0(
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
 }
 
+/**
+ * @brief 注册用于接收完整 MQTT 入站消息的应用回调。
+ * @note The callback must return quickly and must not block ESP-MQTT's event task.
+ */
 void mqtt_manager_set_message_callback(
     mqtt_manager_message_callback_t callback,
     void *context)
@@ -541,6 +578,7 @@ void mqtt_manager_set_message_callback(
     mqtt_manager_unlock();
 }
 
+/** @brief 在管理器互斥锁保护下复制当前 MQTT 状态和流量计数。 */
 void mqtt_manager_get_snapshot(mqtt_manager_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {

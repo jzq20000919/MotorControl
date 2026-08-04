@@ -30,6 +30,7 @@ static const char *TAG = "MQTT_MOTOR";
 static QueueHandle_t s_command_queue;
 static TaskHandle_t s_gateway_task;
 
+/** @brief 将有符号远程命令值限制在闭区间安全范围内。 */
 static int32_t mqtt_gateway_clamp_i32(
     int32_t value,
     int32_t minimum,
@@ -44,6 +45,12 @@ static int32_t mqtt_gateway_clamp_i32(
     return value;
 }
 
+/**
+ * @brief 为一次远程控制请求发布 JSON 确认消息。
+ * @param command_id Client-provided correlation ID, or zero when absent.
+ * @param accepted True when the command passed gateway validation.
+ * @param message Short diagnostic message included in the JSON payload.
+ */
 static void mqtt_gateway_publish_ack(
     uint32_t command_id,
     bool accepted,
@@ -60,6 +67,10 @@ static void mqtt_gateway_publish_ack(
     (void)mqtt_manager_publish(MQTT_MOTOR_ACK_TOPIC, payload);
 }
 
+/**
+ * @brief 在允许影响电机的命令前验证 STM32 链路在线。
+ * @return True when the current motor_link snapshot is live.
+ */
 static bool mqtt_gateway_require_link(
     const motor_link_snapshot_t *snapshot,
     uint32_t command_id)
@@ -71,6 +82,10 @@ static bool mqtt_gateway_require_link(
     return false;
 }
 
+/**
+ * @brief 从网关约束的 JSON 格式中提取简单整数字段。
+ * @return True when @p key exists and parses as a base-10 signed integer.
+ */
 static bool mqtt_gateway_json_int(
     const char *json,
     const char *key,
@@ -99,6 +114,10 @@ static bool mqtt_gateway_json_int(
     return true;
 }
 
+/**
+ * @brief 从网关约束的 JSON 格式中提取简单带引号字符串字段。
+ * @return True when @p key exists and its value fits in the destination buffer.
+ */
 static bool mqtt_gateway_json_string(
     const char *json,
     const char *key,
@@ -138,6 +157,13 @@ static bool mqtt_gateway_json_string(
     return true;
 }
 
+/**
+ * @brief 校验远程 JSON 命令，并映射为 motor_link API 调用。
+ *
+ * This is intentionally the only MQTT path that can issue motor actions. It
+ * enforces link availability, clamps speed and normalises angular targets.
+ * @param payload Complete null-terminated JSON command message.
+ */
 static void mqtt_gateway_process_command(const char *payload)
 {
     char command[32];
@@ -226,6 +252,13 @@ static void mqtt_gateway_process_command(const char *payload)
 
 }
 
+/**
+ * @brief MQTT 回调：将控制消息复制到网关工作队列。
+ *
+ * The callback never drives motor_link directly because it runs in MQTT event
+ * context. When the queue is full, the oldest request is dropped in favour of
+ * the newest operator command.
+ */
 static void mqtt_gateway_message_callback(
     const char *topic,
     const char *payload,
@@ -247,6 +280,9 @@ static void mqtt_gateway_message_callback(
     }
 }
 
+/**
+ * @brief 将统一电机状态快照序列化为 JSON 遥测发布消息。
+ */
 static void mqtt_gateway_publish_telemetry(void)
 {
     motor_link_snapshot_t snapshot;
@@ -293,6 +329,10 @@ static void mqtt_gateway_publish_telemetry(void)
         payload);
 }
 
+/**
+ * @brief 处理排队的远程命令，并周期发布电机遥测。
+ * @param argument Unused task argument.
+ */
 static void mqtt_gateway_task(void *argument)
 {
     (void)argument;
@@ -314,6 +354,10 @@ static void mqtt_gateway_task(void *argument)
     }
 }
 
+/**
+ * @brief 创建 MQTT 电机网关队列、注册回调并创建工作任务。
+ * @return ESP_OK on success; ESP_ERR_NO_MEM if queue/task allocation fails.
+ */
 esp_err_t mqtt_motor_gateway_init(void)
 {
     if (s_gateway_task != NULL) {

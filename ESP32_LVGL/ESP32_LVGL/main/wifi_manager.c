@@ -27,6 +27,7 @@ static uint32_t s_reconnect_attempt;
 
 #define WIFI_MANAGER_RECONNECT_MAX_DELAY_MS 10000U
 
+/** @brief 获取保护 Wi-Fi 快照和重连状态的互斥锁。 */
 static void wifi_manager_lock(void)
 {
     if (s_lock != NULL) {
@@ -34,6 +35,7 @@ static void wifi_manager_lock(void)
     }
 }
 
+/** @brief 释放保护 Wi-Fi 快照和重连状态的互斥锁。 */
 static void wifi_manager_unlock(void)
 {
     if (s_lock != NULL) {
@@ -41,12 +43,14 @@ static void wifi_manager_unlock(void)
     }
 }
 
+/** @brief 在已持有 Wi-Fi 互斥锁时更新 UI 可见状态。 */
 static void wifi_manager_set_status_locked(const char *status)
 {
     strlcpy(s_snapshot.status, status, sizeof(s_snapshot.status));
     s_snapshot.revision++;
 }
 
+/** @brief 返回重连次数对应的、经过上限限制的指数退避延时。 */
 static uint32_t wifi_manager_reconnect_delay_ms(uint32_t attempt)
 {
     uint32_t delay_ms = 1000U << (attempt < 4U ? attempt : 4U);
@@ -56,6 +60,10 @@ static uint32_t wifi_manager_reconnect_delay_ms(uint32_t attempt)
     return delay_ms;
 }
 
+/**
+ * @brief STA 断开后安排一次自动重连。
+ * @note Caller must hold s_lock. A user-requested disconnect never retries.
+ */
 static void wifi_manager_schedule_reconnect_locked(uint16_t reason)
 {
     if (s_reconnect_timer == NULL || s_user_disconnect) {
@@ -98,6 +106,10 @@ static void wifi_manager_schedule_reconnect_locked(uint16_t reason)
     }
 }
 
+/**
+ * @brief 启动延迟重连请求的 ESP 定时器回调。
+ * @param argument Unused timer argument.
+ */
 static void wifi_manager_reconnect_timer_callback(void *argument)
 {
     (void)argument;
@@ -132,6 +144,7 @@ static void wifi_manager_reconnect_timer_callback(void *argument)
     }
 }
 
+/** @brief 将 ESP-IDF 错误格式化到共享 Wi-Fi 状态文本中。 */
 static void wifi_manager_set_error(esp_err_t error, const char *operation)
 {
     wifi_manager_lock();
@@ -145,6 +158,7 @@ static void wifi_manager_set_error(esp_err_t error, const char *operation)
     wifi_manager_unlock();
 }
 
+/** @brief qsort 比较函数：按 RSSI 从高到低排列扫描到的 AP。 */
 static int wifi_manager_compare_ap(const void *left, const void *right)
 {
     const wifi_ap_record_t *a = left;
@@ -152,6 +166,12 @@ static int wifi_manager_compare_ap(const void *left, const void *right)
     return (int)b->rssi - (int)a->rssi;
 }
 
+/**
+ * @brief 获取、排序、去重并发布已完成的 AP 扫描结果。
+ *
+ * Only the strongest WIFI_MANAGER_MAX_APS visible networks are retained for
+ * the constrained UI list.
+ */
 static void wifi_manager_store_scan_results(void)
 {
     wifi_ap_record_t records[WIFI_MANAGER_MAX_APS];
@@ -236,6 +256,12 @@ static void wifi_manager_store_scan_results(void)
         (unsigned int)record_count);
 }
 
+/**
+ * @brief 处理来自 ESP-IDF 的异步 Wi-Fi 和 IP 事件。
+ *
+ * This callback updates the snapshot and starts reconnect timers; it does not
+ * manipulate LVGL, so the UI may safely poll the resulting snapshot.
+ */
 static void wifi_manager_event_handler(
     void *argument,
     esp_event_base_t event_base,
@@ -311,6 +337,10 @@ static void wifi_manager_event_handler(
     }
 }
 
+/**
+ * @brief 初始化 NVS、网络事件循环和 Wi-Fi STA 模式。
+ * @return ESP_OK on ready state, or the first ESP-IDF initialisation error.
+ */
 esp_err_t wifi_manager_init(void)
 {
     if (s_lock != NULL) {
@@ -414,6 +444,10 @@ esp_err_t wifi_manager_init(void)
     return ESP_OK;
 }
 
+/**
+ * @brief 启动非阻塞 Wi-Fi 扫描；结果通过 WIFI_EVENT_SCAN_DONE 返回。
+ * @return ESP_ERR_INVALID_STATE when not ready or a scan is already in progress.
+ */
 esp_err_t wifi_manager_scan_async(void)
 {
     wifi_manager_lock();
@@ -439,6 +473,12 @@ esp_err_t wifi_manager_scan_async(void)
     return result;
 }
 
+/**
+ * @brief 配置并开始连接指定的无线 AP。
+ * @param ssid Null-terminated SSID no longer than 32 bytes.
+ * @param password Null-terminated WPA password no longer than 63 bytes.
+ * @return Request result; an ESP_OK return means connection is pending, not done.
+ */
 esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 {
     if (ssid == NULL || ssid[0] == '\0' || password == NULL ||
@@ -498,6 +538,10 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     return result;
 }
 
+/**
+ * @brief 停止自动重连并断开 Wi-Fi STA。
+ * @return ESP_OK also when the station was already disconnected.
+ */
 esp_err_t wifi_manager_disconnect(void)
 {
     wifi_manager_lock();
@@ -525,6 +569,10 @@ esp_err_t wifi_manager_disconnect(void)
     return result == ESP_ERR_WIFI_NOT_CONNECT ? ESP_OK : result;
 }
 
+/**
+ * @brief 在管理器互斥锁保护下复制当前 Wi-Fi 状态和可见 AP 列表。
+ * @param[out] snapshot Destination; NULL is ignored.
+ */
 void wifi_manager_get_snapshot(wifi_manager_snapshot_t *snapshot)
 {
     if (snapshot == NULL) {
