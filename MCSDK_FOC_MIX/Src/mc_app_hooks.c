@@ -46,6 +46,7 @@
  *
  *
  *
+ * @note 中文说明：初始化 MC_APP_BootHook 所属模块、外设或运行状态。
  */
 __weak void MC_APP_BootHook(void)
 {
@@ -66,6 +67,7 @@ __weak void MC_APP_BootHook(void)
  *
  *
  *
+ * @note 中文说明：执行 MC_APP_PostMediumFrequencyHook_M1 对应的模块功能。
  */
 __weak void MC_APP_PostMediumFrequencyHook_M1(void)
 {

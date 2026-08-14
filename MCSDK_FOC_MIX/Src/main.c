@@ -65,19 +65,33 @@ DMA_HandleTypeDef hdma_usart2_tx;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
+/** @brief 配置系统时钟树及各总线时钟。 */
 void SystemClock_Config(void);
+/** @brief 初始化工程使用的 GPIO 引脚。 */
 static void MX_GPIO_Init(void);
+/** @brief 初始化 DMA 控制器及其中断。 */
 static void MX_DMA_Init(void);
+/** @brief 初始化 ADC1 电流采样外设。 */
 static void MX_ADC1_Init(void);
+/** @brief 初始化 ADC2 电流采样外设。 */
 static void MX_ADC2_Init(void);
+/** @brief 初始化 CORDIC 数学加速器。 */
 static void MX_CORDIC_Init(void);
+/** @brief 初始化 DAC1 外设。 */
 static void MX_DAC1_Init(void);
+/** @brief 初始化 OPAMP1 运算放大器。 */
 static void MX_OPAMP1_Init(void);
+/** @brief 初始化 OPAMP2 运算放大器。 */
 static void MX_OPAMP2_Init(void);
+/** @brief 初始化 OPAMP3 运算放大器。 */
 static void MX_OPAMP3_Init(void);
+/** @brief 初始化 TIM1 电机 PWM 定时器。 */
 static void MX_TIM1_Init(void);
+/** @brief 初始化 TIM3 编码器定时器。 */
 static void MX_TIM3_Init(void);
+/** @brief 初始化 USART2 通信外设。 */
 static void MX_USART2_UART_Init(void);
+/** @brief 配置工程使用的 NVIC 中断优先级。 */
 static void MX_NVIC_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -91,6 +105,7 @@ static void MX_NVIC_Init(void);
 /**
   * @brief  The application entry point.
   * @retval int
+  * @note 中文说明：执行 main 对应的模块功能。
   */
 int main(void)
 {
@@ -156,6 +171,7 @@ int main(void)
 /**
   * @brief System Clock Configuration
   * @retval None
+  * @note 中文说明：设置 SystemClock_Config 对应的控制参数、目标值或外设配置。
   */
 void SystemClock_Config(void)
 {
@@ -205,6 +221,7 @@ void SystemClock_Config(void)
 /**
   * @brief NVIC Configuration.
   * @retval None
+  * @note 中文说明：初始化 MX_NVIC_Init 所属模块、外设或运行状态。
   */
 static void MX_NVIC_Init(void)
 {
@@ -235,6 +252,7 @@ static void MX_NVIC_Init(void)
   * @brief ADC1 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_ADC1_Init 所属模块、外设或运行状态。
   */
 static void MX_ADC1_Init(void)
 {
@@ -342,6 +360,7 @@ static void MX_ADC1_Init(void)
   * @brief ADC2 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_ADC2_Init 所属模块、外设或运行状态。
   */
 static void MX_ADC2_Init(void)
 {
@@ -415,6 +434,7 @@ static void MX_ADC2_Init(void)
   * @brief CORDIC Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_CORDIC_Init 所属模块、外设或运行状态。
   */
 static void MX_CORDIC_Init(void)
 {
@@ -441,6 +461,7 @@ static void MX_CORDIC_Init(void)
   * @brief DAC1 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_DAC1_Init 所属模块、外设或运行状态。
   */
 static void MX_DAC1_Init(void)
 {
@@ -488,6 +509,7 @@ static void MX_DAC1_Init(void)
   * @brief OPAMP1 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_OPAMP1_Init 所属模块、外设或运行状态。
   */
 static void MX_OPAMP1_Init(void)
 {
@@ -521,6 +543,7 @@ static void MX_OPAMP1_Init(void)
   * @brief OPAMP2 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_OPAMP2_Init 所属模块、外设或运行状态。
   */
 static void MX_OPAMP2_Init(void)
 {
@@ -554,6 +577,7 @@ static void MX_OPAMP2_Init(void)
   * @brief OPAMP3 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_OPAMP3_Init 所属模块、外设或运行状态。
   */
 static void MX_OPAMP3_Init(void)
 {
@@ -587,6 +611,7 @@ static void MX_OPAMP3_Init(void)
   * @brief TIM1 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_TIM1_Init 所属模块、外设或运行状态。
   */
 static void MX_TIM1_Init(void)
 {
@@ -681,6 +706,7 @@ static void MX_TIM1_Init(void)
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
+  * @note 中文说明：初始化 MX_TIM3_Init 所属模块、外设或运行状态。
   */
 static void MX_TIM3_Init(void)
 {
@@ -697,10 +723,10 @@ static void MX_TIM3_Init(void)
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 0;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;//���ϼ���
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;//向上计数
   htim3.Init.Period = M1_PULSE_NBR;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;//�Զ���װ�ؼĴ���Ԥװ��ʹ��
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;//自动重装载寄存器预装载使能
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;

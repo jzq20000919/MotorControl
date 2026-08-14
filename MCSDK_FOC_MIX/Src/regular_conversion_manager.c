@@ -122,6 +122,7 @@ static uint8_t RCM_conversion_nb = 0U; /*!< total number of valid element in the
   *
   * @retval bool true if the conversion is registered correctly, false otherwise still ongoing.
   *
+  * @note 中文说明：注册 RCM_RegisterRegConv 对应的回调函数或通信接口。
   */
 bool RCM_RegisterRegConv(RegConv_t *regConv)
 {
@@ -198,6 +199,7 @@ __attribute__((section (".ccmram")))
  * and user conversion.
  *
  * @note: This function is not part of the public API and users should not call it.
+ * @note 中文说明：执行 RCM_ExecNextConv 对应的周期任务或电机控制流程。
  */
 void RCM_ExecNextConv(void)
 {
@@ -235,6 +237,7 @@ __attribute__((section (".ccmram")))
  * and user conversion.
  *
  * @note: This function is not part of the public API and users should not call it.
+ * @note 中文说明：获取 RCM_ReadOngoingConv 对应的状态、配置或计算结果。
  */
 void RCM_ReadOngoingConv(void)
 {
@@ -278,6 +281,7 @@ void RCM_ReadOngoingConv(void)
  * If it is possible to execute the conversion instantaneously, it will be executed, and result returned.
  *
  * @note: This function is not part of the public API and users should not call it.
+ * @note 中文说明：执行 RCM_ExecRegularConv 对应的周期任务或电机控制流程。
  */
 uint16_t RCM_ExecRegularConv(RegConv_t *regConv)
 {
@@ -319,6 +323,7 @@ uint16_t RCM_ExecRegularConv(RegConv_t *regConv)
  * This function is used to wait for the result of a regular conversion.
  * @note: This shall be used only right after a call to RCM_ExecNextConv routine.
  *
+ * @note 中文说明：执行 RCM_WaitForConv 对应的模块功能。
  */
 void RCM_WaitForConv(void)
 {

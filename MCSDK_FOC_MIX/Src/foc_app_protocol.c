@@ -24,6 +24,7 @@
 static MCI_State_t FocApp_PreviousMotorState = IDLE;
 static FocApp_Mode_t FocApp_ControlMode = FOC_APP_MODE_POSITION;
 
+/** @brief 执行 FocApp_HoldCurrentPosition 对应的模块功能。 */
 static void FocApp_HoldCurrentPosition(void)
 {
   float currentPosition = MC_GetCurrentPosition1();
@@ -50,6 +51,7 @@ static void FocApp_HoldCurrentPosition(void)
   PosCtrlM1.PositionCtrlStatus = TC_READY_FOR_COMMAND;
 }
 
+/** @brief 执行 FocApp_EnterSpeedMode 对应的模块功能。 */
 static void FocApp_EnterSpeedMode(void)
 {
   PosCtrlM1.PositionControlRegulation = false;
@@ -64,6 +66,7 @@ static void FocApp_EnterSpeedMode(void)
   }
 }
 
+/** @brief 设置 FocApp_SetControlMode 对应的控制参数、目标值或外设配置。 */
 bool FocApp_SetControlMode(FocApp_Mode_t mode)
 {
   if ((mode != FOC_APP_MODE_SPEED) && (mode != FOC_APP_MODE_POSITION))
@@ -91,11 +94,13 @@ bool FocApp_SetControlMode(FocApp_Mode_t mode)
   return true;
 }
 
+/** @brief 获取 FocApp_GetControlMode 对应的状态、配置或计算结果。 */
 FocApp_Mode_t FocApp_GetControlMode(void)
 {
   return FocApp_ControlMode;
 }
 
+/** @brief 执行 FocApp_HoldPosition 对应的模块功能。 */
 bool FocApp_HoldPosition(void)
 {
   if ((MC_GetSTMStateMotor1() != RUN) ||
@@ -107,17 +112,20 @@ bool FocApp_HoldPosition(void)
   return true;
 }
 
+/** @brief 编码并发送 FocApp_WriteU16 对应的数据或通信帧。 */
 static void FocApp_WriteU16(uint8_t *buffer, uint16_t value)
 {
   buffer[0] = (uint8_t)(value & 0xFFU);
   buffer[1] = (uint8_t)((value >> 8U) & 0xFFU);
 }
 
+/** @brief 编码并发送 FocApp_WriteS16 对应的数据或通信帧。 */
 static void FocApp_WriteS16(uint8_t *buffer, int16_t value)
 {
   FocApp_WriteU16(buffer, (uint16_t)value);
 }
 
+/** @brief 编码并发送 FocApp_WriteU32 对应的数据或通信帧。 */
 static void FocApp_WriteU32(uint8_t *buffer, uint32_t value)
 {
   buffer[0] = (uint8_t)(value & 0xFFU);
@@ -126,11 +134,13 @@ static void FocApp_WriteU32(uint8_t *buffer, uint32_t value)
   buffer[3] = (uint8_t)((value >> 24U) & 0xFFU);
 }
 
+/** @brief 编码并发送 FocApp_WriteS32 对应的数据或通信帧。 */
 static void FocApp_WriteS32(uint8_t *buffer, int32_t value)
 {
   FocApp_WriteU32(buffer, (uint32_t)value);
 }
 
+/** @brief 获取 FocApp_ReadS32 对应的状态、配置或计算结果。 */
 static int32_t FocApp_ReadS32(const uint8_t *buffer)
 {
   uint32_t value = ((uint32_t)buffer[0]) |
@@ -140,6 +150,7 @@ static int32_t FocApp_ReadS32(const uint8_t *buffer)
   return (int32_t)value;
 }
 
+/** @brief 获取 FocApp_ReadS16 对应的状态、配置或计算结果。 */
 static int16_t FocApp_ReadS16(const uint8_t *buffer)
 {
   uint16_t value = ((uint16_t)buffer[0]) |
@@ -147,6 +158,7 @@ static int16_t FocApp_ReadS16(const uint8_t *buffer)
   return (int16_t)value;
 }
 
+/** @brief 获取 FocApp_ReadU32 对应的状态、配置或计算结果。 */
 static uint32_t FocApp_ReadU32(const uint8_t *buffer)
 {
   return ((uint32_t)buffer[0]) |
@@ -155,6 +167,7 @@ static uint32_t FocApp_ReadU32(const uint8_t *buffer)
          ((uint32_t)buffer[3] << 24U);
 }
 
+/** @brief 设置 FocApp_SetSpeedCommand 对应的控制参数、目标值或外设配置。 */
 bool FocApp_SetSpeedCommand(int16_t targetRpm, uint32_t durationMs)
 {
   if ((MC_GetSTMStateMotor1() != RUN) ||
@@ -179,6 +192,7 @@ bool FocApp_SetSpeedCommand(int16_t targetRpm, uint32_t durationMs)
   return true;
 }
 
+/** @brief 设置 FocApp_SetPositionCommand 对应的控制参数、目标值或外设配置。 */
 bool FocApp_SetPositionCommand(int32_t targetCdeg, uint32_t durationMs)
 {
   if ((MC_GetSTMStateMotor1() != RUN) ||
@@ -204,6 +218,7 @@ bool FocApp_SetPositionCommand(int32_t targetCdeg, uint32_t durationMs)
   return true;
 }
 
+/** @brief 执行 FocApp_FloatToS32 对应的模块功能。 */
 static int32_t FocApp_FloatToS32(float value)
 {
   if (value > 2147483000.0F)
@@ -217,6 +232,7 @@ static int32_t FocApp_FloatToS32(float value)
   return (int32_t)value;
 }
 
+/** @brief 构建 FocApp_BuildTelemetry 对应的数据结构或遥测负载。 */
 static uint16_t FocApp_BuildTelemetry(uint8_t *buffer, int16_t capacity)
 {
   qd_f_t current;
@@ -263,6 +279,7 @@ static uint16_t FocApp_BuildTelemetry(uint8_t *buffer, int16_t capacity)
   return FOC_APP_TELEMETRY_SIZE;
 }
 
+/** @brief 响应 FocApp_McpCallback 对应的应用或外设回调事件。 */
 static uint8_t FocApp_McpCallback(uint16_t rxLength, uint8_t *rxBuffer,
                                   int16_t txSyncFreeSpace, uint16_t *txLength,
                                   uint8_t *txBuffer)
@@ -362,6 +379,7 @@ static uint8_t FocApp_McpCallback(uint16_t rxLength, uint8_t *rxBuffer,
   return result;
 }
 
+/** @brief 初始化 FocAppProtocol_Init 所属模块、外设或运行状态。 */
 void FocAppProtocol_Init(void)
 {
   FocApp_ControlMode = FOC_APP_MODE_POSITION;
@@ -369,6 +387,7 @@ void FocAppProtocol_Init(void)
   (void)MCP_RegisterCallBack(FOC_APP_MCP_CALLBACK_ID, FocApp_McpCallback);
 }
 
+/** @brief 执行 FocAppProtocol_Tick 对应的周期任务或电机控制流程。 */
 void FocAppProtocol_Tick(void)
 {
   MCI_State_t currentState = MC_GetSTMStateMotor1();

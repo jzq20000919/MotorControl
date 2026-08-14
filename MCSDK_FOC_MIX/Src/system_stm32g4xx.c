@@ -176,6 +176,7 @@
   * @brief  Setup the microcontroller system.
   * @param  None
   * @retval None
+  * @note 中文说明：初始化 SystemInit 所属模块、外设或运行状态。
   */
 
 void SystemInit(void)
@@ -226,6 +227,7 @@ void SystemInit(void)
   *
   * @param  None
   * @retval None
+  * @note 中文说明：执行 SystemCoreClockUpdate 对应的模块功能。
   */
 void SystemCoreClockUpdate(void)
 {
@@ -283,5 +285,3 @@ void SystemCoreClockUpdate(void)
 /**
   * @}
   */
-
-

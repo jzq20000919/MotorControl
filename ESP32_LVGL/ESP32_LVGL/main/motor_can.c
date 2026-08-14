@@ -30,8 +30,8 @@ typedef struct
 } motor_can_request_t;
 
 /*
- * twai_frame_t only stores a pointer to its payload.  Copy received frames
- * into this self-contained object before passing them out of the ISR.
+ * twai_frame_t 只保存指向负载的指针，因此离开 ISR 前需要把接收帧复制到
+ * 这个自包含对象中。
  */
 typedef struct
 {
@@ -76,10 +76,9 @@ static bool s_initialized;
 /**
  * @brief 对外部 CAN 收发器执行 GPIO 电平连通性自检。
  *
- * Before TWAI takes ownership of the pins, drive TXD recessive/dominant and
- * observe RXD. This is a diagnostic hint only: a failed local test does not
- * prevent CAN startup because a valid received status frame is stronger proof.
- * @return True if RXD follows the expected local levels.
+ * 在 TWAI 接管引脚前，分别驱动 TXD 为隐性和显性电平并观察 RXD。此结果仅
+ * 用作诊断提示；本地测试失败不会阻止 CAN 启动，因为有效状态帧更能证明链路正常。
+ * @return RXD 跟随预期本地电平变化时返回 true，否则返回 false。
  */
 static bool motor_can_transceiver_self_test(void)
 {
@@ -117,18 +116,9 @@ static bool motor_can_transceiver_self_test(void)
         (dominant_level == 0) &&
         (released_level == 1);
 
-    ESP_LOGI(
-        TAG,
-        "Transceiver self-test RXD: idle=%d dominant=%d release=%d -> %s",
-        recessive_level,
-        dominant_level,
-        released_level,
-        passed ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "Transceiver self-test RXD: idle=%d dominant=%d release=%d -> %s", recessive_level, dominant_level, released_level, passed ? "PASS" : "FAIL");
     if (!passed) {
-        ESP_LOGW(
-            TAG,
-            "Local CAN path check failed; live TWAI diagnostics remain enabled. "
-            "Verify Port1 GPIO5->TXD, GPIO6<-RXD, VCC/VIO/EN and S=LOW");
+        ESP_LOGW(TAG, "Local CAN path check failed; live TWAI diagnostics remain enabled. " "Verify Port1 GPIO5->TXD, GPIO6<-RXD, VCC/VIO/EN and S=LOW");
     }
     return passed;
 }
@@ -144,13 +134,12 @@ static void motor_can_record_tx_error(void)
 /**
  * @brief 编码并发送一帧 CAN 命令帧。
  *
- * ESP-IDF 6 queues a pointer to the frame payload, so this function waits for
- * prior and current transmissions to complete before reusing the persistent
- * buffer. Motor-affecting commands are rejected unless CAN owns control.
+ * ESP-IDF 6 将帧负载指针放入队列，因此复用持久缓冲区之前，本函数会等待前一帧
+ * 和当前帧发送完成。只有 CAN 持有控制权时才允许发送会影响电机的命令。
  *
- * @param command Protocol command opcode.
- * @param value Value encoded according to @p command.
- * @return ESP_OK when transmission completed; otherwise a TWAI error.
+ * @param command 协议命令操作码。
+ * @param value 按照 @p command 规定格式编码的命令值。
+ * @return 发送完成时返回 ESP_OK，否则返回 TWAI 错误码。
  */
 static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
 {
@@ -164,14 +153,12 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
         }
     }
     /*
-     * ESP-IDF 6 queues the frame pointer instead of copying the complete
-     * object.  Never overwrite the persistent buffer while an earlier frame
-     * might still be owned by the driver.
+     * ESP-IDF 6 将帧指针入队，而不是复制完整对象。前一帧仍可能由驱动持有时，
+     * 不得覆盖持久发送缓冲区。
      */
     if (s_tx_pending) {
         const esp_err_t pending_result =
-            twai_node_transmit_wait_all_done(
-                s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
+            twai_node_transmit_wait_all_done(s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
         if (pending_result != ESP_OK) {
             motor_can_record_tx_error();
             return pending_result;
@@ -198,12 +185,10 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
         break;
     }
 
-    esp_err_t result = twai_node_transmit(
-        s_twai_node, &s_tx_frame, MOTOR_CAN_TX_TIMEOUT_MS);
+    esp_err_t result = twai_node_transmit(s_twai_node, &s_tx_frame, MOTOR_CAN_TX_TIMEOUT_MS);
     if (result == ESP_OK) {
         s_tx_pending = true;
-        result = twai_node_transmit_wait_all_done(
-            s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
+        result = twai_node_transmit_wait_all_done(s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
         if (result == ESP_OK) {
             s_tx_pending = false;
         }
@@ -221,8 +206,7 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
 /**
  * @brief 为 CAN TX 工作任务排队一个离散控制动作。
  *
- * If the bounded queue is full, discard its oldest entry so the newest user
- * action takes precedence over stale UI operations.
+ * 有界队列已满时丢弃最旧条目，使最新用户动作优先于过时的界面操作。
  */
 static void motor_can_queue_control(MotorCan_Command_t command, int32_t value)
 {
@@ -244,7 +228,7 @@ static void motor_can_queue_control(MotorCan_Command_t command, int32_t value)
 
 /**
  * @brief 解码 CAN 状态帧 0x180 并刷新电机/链路状态。
- * @param frame Self-contained received CAN frame with an 8-byte payload.
+ * @param frame 包含 8 字节负载的完整 CAN 接收帧。
  */
 static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
 {
@@ -270,7 +254,7 @@ static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
         MotorCan_ReadS16(&frame->data[4]);
     s_snapshot.faults = MotorCan_ReadU16(&frame->data[6]);
     s_snapshot.received_frames++;
-    /* A valid bus frame is stronger evidence than the optional GPIO test. */
+    /* 有效总线帧比可选的 GPIO 自检结果更能证明收发器链路正常。 */
     s_snapshot.transceiver_fault = false;
     s_transceiver_test_passed = true;
     s_last_status_us = now_us;
@@ -279,7 +263,7 @@ static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
 
 /**
  * @brief 将 CAN 参考值/位置帧 0x181 解码到遥测快照中。
- * @param frame Self-contained received CAN frame.
+ * @param frame 完整的 CAN 接收帧。
  */
 static void motor_can_parse_references(const motor_can_rx_frame_t *frame)
 {
@@ -298,7 +282,7 @@ static void motor_can_parse_references(const motor_can_rx_frame_t *frame)
 
 /**
  * @brief 将 CAN 电气电流帧 0x182 解码到遥测快照中。
- * @param frame Self-contained received CAN frame.
+ * @param frame 完整的 CAN 接收帧。
  */
 static void motor_can_parse_electrical(const motor_can_rx_frame_t *frame)
 {
@@ -314,8 +298,8 @@ static void motor_can_parse_electrical(const motor_can_rx_frame_t *frame)
 /**
  * @brief ISR 上下文的 TWAI 接收回调：将帧复制到 RTOS 队列。
  *
- * No frame parsing, logging or UI work is allowed here. The RX task performs
- * all non-trivial work after the interrupt has returned.
+ * 此处禁止执行帧解析、日志记录或界面操作；中断返回后由 RX 任务完成所有
+ * 非简单处理。
  */
 static bool IRAM_ATTR motor_can_rx_callback(
     twai_node_handle_t handle,
@@ -337,8 +321,7 @@ static bool IRAM_ATTR motor_can_rx_callback(
         received.extended = frame.header.ide;
         received.remote = frame.header.rtr;
 
-        (void)xQueueSendFromISR(
-            (QueueHandle_t)user_context, &received, &task_woken);
+        (void)xQueueSendFromISR((QueueHandle_t)user_context, &received, &task_woken);
     }
 
     return task_woken == pdTRUE;
@@ -346,7 +329,7 @@ static bool IRAM_ATTR motor_can_rx_callback(
 
 /**
  * @brief ISR 上下文的 TWAI 错误回调：记录标志供后续任务处理。
- * @return False because the callback does not wake a higher-priority task.
+ * @return 此回调不会唤醒更高优先级任务，因此始终返回 false。
  */
 static bool IRAM_ATTR motor_can_error_callback(
     twai_node_handle_t handle,
@@ -364,8 +347,8 @@ static bool IRAM_ATTR motor_can_error_callback(
 
 /**
  * @brief 校验队列中 CAN 帧并按协议 ID 分发的接收任务。
- * @param argument Unused task argument.
- * @note Runs outside ISR context, so it may take the module critical section.
+ * @param argument 未使用的任务参数。
+ * @note 该任务运行在 ISR 上下文之外，因此可以进入模块临界区。
  */
 static void motor_can_rx_task(void *argument)
 {
@@ -399,7 +382,7 @@ static void motor_can_rx_task(void *argument)
 
 /**
  * @brief 更新 CAN 诊断信息，并启动/跟踪 Bus-Off 恢复流程。
- * @return True only when the controller may safely send normal traffic.
+ * @return 仅当控制器能够安全发送正常报文时返回 true。
  */
 static bool motor_can_service_bus_state(void)
 {
@@ -420,18 +403,7 @@ static bool motor_can_service_bus_state(void)
         ((now_us - s_last_error_log_us) >= 1000000LL)) {
         const twai_error_flags_t decoded = {.val = error_flags};
         s_last_error_log_us = now_us;
-        ESP_LOGW(
-            TAG,
-            "CAN error flags=0x%02lx ACK=%u BIT=%u FORM=%u STUFF=%u ARB=%u "
-            "RXD=%d LOCAL=%s",
-            (unsigned long)error_flags,
-            (unsigned)decoded.ack_err,
-            (unsigned)decoded.bit_err,
-            (unsigned)decoded.form_err,
-            (unsigned)decoded.stuff_err,
-            (unsigned)decoded.arb_lost,
-            gpio_get_level(MOTOR_CAN_RX_GPIO),
-            transceiver_fault ? "WARN" : "PASS");
+        ESP_LOGW(TAG, "CAN error flags=0x%02lx ACK=%u BIT=%u FORM=%u STUFF=%u ARB=%u " "RXD=%d LOCAL=%s", (unsigned long)error_flags, (unsigned)decoded.ack_err, (unsigned)decoded.bit_err, (unsigned)decoded.form_err, (unsigned)decoded.stuff_err, (unsigned)decoded.arb_lost, gpio_get_level(MOTOR_CAN_RX_GPIO), transceiver_fault ? "WARN" : "PASS");
     }
 
     const bool bus_off = status.state == TWAI_ERROR_BUS_OFF;
@@ -441,13 +413,7 @@ static bool motor_can_service_bus_state(void)
 
     if (bus_off) {
         if (!s_recovery_requested) {
-            ESP_LOGW(
-                TAG,
-                "Bus-off (TEC=%u REC=%u RXD=%d LOCAL=%s); starting recovery",
-                (unsigned)status.tx_error_count,
-                (unsigned)status.rx_error_count,
-                gpio_get_level(MOTOR_CAN_RX_GPIO),
-                transceiver_fault ? "WARN" : "PASS");
+            ESP_LOGW(TAG, "Bus-off (TEC=%u REC=%u RXD=%d LOCAL=%s); starting recovery", (unsigned)status.tx_error_count, (unsigned)status.rx_error_count, gpio_get_level(MOTOR_CAN_RX_GPIO), transceiver_fault ? "WARN" : "PASS");
             if (twai_node_recover(s_twai_node) == ESP_OK) {
                 s_recovery_requested = true;
             }
@@ -464,7 +430,7 @@ static bool motor_can_service_bus_state(void)
 
 /**
  * @brief 仅当没有更新目标覆盖时，重新标记发送失败的位置目标。
- * @param position_cdeg Target value that failed to transmit.
+ * @param position_cdeg 发送失败的位置目标值，单位为 0.01°。
  */
 static void motor_can_restore_position_if_latest(uint16_t position_cdeg)
 {
@@ -477,7 +443,7 @@ static void motor_can_restore_position_if_latest(uint16_t position_cdeg)
 
 /**
  * @brief 仅当没有更新目标覆盖时，重新标记发送失败的速度目标。
- * @param speed_rpm Target value that failed to transmit.
+ * @param speed_rpm 发送失败的速度目标值，单位为 rpm。
  */
 static void motor_can_restore_speed_if_latest(int16_t speed_rpm)
 {
@@ -491,10 +457,9 @@ static void motor_can_restore_speed_if_latest(int16_t speed_rpm)
 /**
  * @brief 周期处理排队动作、最新目标和心跳的 CAN TX 工作任务。
  *
- * The task does not remove requests while Bus-Off. Discrete commands are put
- * back at the queue head after transient TX failures; continuous speed/position
- * targets are retried only if they are still the newest requested values.
- * @param argument Unused task argument.
+ * 总线关闭期间任务不会取出请求。短暂发送失败后，离散命令会重新放回队首；
+ * 连续速度和位置目标仅在仍是最新请求值时才重试。
+ * @param argument 未使用的任务参数。
  */
 static void motor_can_tx_task(void *argument)
 {
@@ -504,13 +469,11 @@ static void motor_can_tx_task(void *argument)
 
     for (;;) {
         /*
-         * Never dequeue a command or call the driver's TX-wait API while the
-         * controller is Bus-Off.  The pending frame stays valid and is
-         * retried by the driver after recovery.
+         * 控制器处于总线关闭状态时，不得取出命令或调用驱动的发送等待接口。
+         * 待发送帧保持有效，并在恢复后由驱动重试。
          */
         if (!motor_can_service_bus_state()) {
-            vTaskDelayUntil(
-                &last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
+            vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
             continue;
         }
 
@@ -524,9 +487,8 @@ static void motor_can_tx_task(void *argument)
                xQueueReceive(s_control_queue, &request, 0) == pdTRUE) {
             if (motor_can_transmit(request.command, request.value) != ESP_OK) {
                 /*
-                 * START/STOP/MODE/ACK are edge-triggered UI actions.  Keep
-                 * the command at the head of the queue across a transient
-                 * TX timeout instead of silently losing the button press.
+                 * START、STOP、MODE 和 ACK 均为边沿触发的界面动作。短暂发送
+                 * 超时时将命令保留在队首，避免静默丢失按键操作。
                  */
                 (void)xQueueSendToFront(s_control_queue, &request, 0);
                 break;
@@ -548,15 +510,11 @@ static void motor_can_tx_task(void *argument)
         portEXIT_CRITICAL(&s_lock);
 
         if (send_position &&
-            motor_can_transmit(
-                MOTOR_CAN_CMD_SET_POSITION_CDEG,
-                position_cdeg) != ESP_OK) {
+            motor_can_transmit(MOTOR_CAN_CMD_SET_POSITION_CDEG, position_cdeg) != ESP_OK) {
             motor_can_restore_position_if_latest(position_cdeg);
         }
         if (send_speed &&
-            motor_can_transmit(
-                MOTOR_CAN_CMD_SET_SPEED_RPM,
-                speed_rpm) != ESP_OK) {
+            motor_can_transmit(MOTOR_CAN_CMD_SET_SPEED_RPM, speed_rpm) != ESP_OK) {
             motor_can_restore_speed_if_latest(speed_rpm);
         }
 
@@ -567,8 +525,7 @@ static void motor_can_tx_task(void *argument)
                 now_us + (MOTOR_CAN_HEARTBEAT_PERIOD_MS * 1000LL);
         }
 
-        vTaskDelayUntil(
-            &last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
     }
 }
 
@@ -588,9 +545,9 @@ static void motor_can_delete_queues(void)
 /**
  * @brief 初始化 TWAI、过滤器、回调以及绑定核心的 CAN 工作任务。
  *
- * The hardware filter admits 0x180..0x183 feedback frames. Both worker tasks
- * are pinned to Core 0 so UI work on Core 1 remains isolated.
- * @return ESP_OK when the transport is ready, otherwise an allocation/TWAI error.
+ * 硬件过滤器允许 0x180～0x183 反馈帧通过。两个工作任务均绑定到 Core 0，
+ * 从而与 Core 1 上的界面工作隔离。
+ * @return 传输通道就绪时返回 ESP_OK，否则返回内存分配或 TWAI 错误码。
  */
 esp_err_t motor_can_init(void)
 {
@@ -615,11 +572,9 @@ esp_err_t motor_can_init(void)
     s_snapshot.transceiver_fault = !s_transceiver_test_passed;
 
     s_control_queue =
-        xQueueCreate(MOTOR_CAN_CONTROL_QUEUE_LENGTH,
-                     sizeof(motor_can_request_t));
+        xQueueCreate(MOTOR_CAN_CONTROL_QUEUE_LENGTH, sizeof(motor_can_request_t));
     s_rx_queue =
-        xQueueCreate(MOTOR_CAN_RX_QUEUE_LENGTH,
-                     sizeof(motor_can_rx_frame_t));
+        xQueueCreate(MOTOR_CAN_RX_QUEUE_LENGTH, sizeof(motor_can_rx_frame_t));
     if ((s_control_queue == NULL) || (s_rx_queue == NULL)) {
         motor_can_delete_queues();
         return ESP_ERR_NO_MEM;
@@ -647,8 +602,8 @@ esp_err_t motor_can_init(void)
     }
 
     /*
-     * Match 0x180..0x183.  The application uses 0x180..0x182, while the
-     * fourth value keeps the mask representable by the classic controller.
+     * 匹配 0x180～0x183。应用实际使用 0x180～0x182，第四个值用于保证该掩码
+     * 能由经典 CAN 控制器表示。
      */
     const twai_mask_filter_config_t filter_config = {
         .id = MOTOR_CAN_ID_STATUS,
@@ -657,8 +612,7 @@ esp_err_t motor_can_init(void)
         .no_classic = false,
         .no_fd = true,
     };
-    result = twai_node_config_mask_filter(
-        s_twai_node, 0, &filter_config);
+    result = twai_node_config_mask_filter(s_twai_node, 0, &filter_config);
     if (result != ESP_OK) {
         (void)twai_node_delete(s_twai_node);
         s_twai_node = NULL;
@@ -670,8 +624,7 @@ esp_err_t motor_can_init(void)
         .on_rx_done = motor_can_rx_callback,
         .on_error = motor_can_error_callback,
     };
-    result = twai_node_register_event_callbacks(
-        s_twai_node, &callbacks, s_rx_queue);
+    result = twai_node_register_event_callbacks(s_twai_node, &callbacks, s_rx_queue);
     if (result != ESP_OK) {
         (void)twai_node_delete(s_twai_node);
         s_twai_node = NULL;
@@ -689,22 +642,13 @@ esp_err_t motor_can_init(void)
 
     vTaskDelay(pdMS_TO_TICKS(1));
     const int rxd_idle_level = gpio_get_level(MOTOR_CAN_RX_GPIO);
-    ESP_LOGI(
-        TAG,
-        "Port1 RXD idle level=%d (expected 1); TXD is peripheral output",
-        rxd_idle_level);
+    ESP_LOGI(TAG, "Port1 RXD idle level=%d (expected 1); TXD is peripheral output", rxd_idle_level);
     if (rxd_idle_level == 0) {
-        ESP_LOGE(
-            TAG,
-            "RXD is stuck low: check transceiver VCC/VIO, S pin, CAN short and wiring");
+        ESP_LOGE(TAG, "RXD is stuck low: check transceiver VCC/VIO, S pin, CAN short and wiring");
     }
 
-    if (xTaskCreatePinnedToCore(
-            motor_can_rx_task, "motor_can_rx", 3072, NULL,
-            12, &s_rx_task, 0) != pdPASS ||
-        xTaskCreatePinnedToCore(
-            motor_can_tx_task, "motor_can_tx", 3072, NULL,
-            11, &s_tx_task, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCore(motor_can_rx_task, "motor_can_rx", 3072, NULL, 12, &s_rx_task, 0) != pdPASS ||
+        xTaskCreatePinnedToCore(motor_can_tx_task, "motor_can_tx", 3072, NULL, 11, &s_tx_task, 0) != pdPASS) {
         if (s_rx_task != NULL) {
             vTaskDelete(s_rx_task);
             s_rx_task = NULL;
@@ -720,19 +664,14 @@ esp_err_t motor_can_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(
-        TAG,
-        "TWAI ready: TX=GPIO%d RX=GPIO%d bitrate=%u",
-        MOTOR_CAN_TX_GPIO,
-        MOTOR_CAN_RX_GPIO,
-        MOTOR_CAN_BITRATE);
+    ESP_LOGI(TAG, "TWAI ready: TX=GPIO%d RX=GPIO%d bitrate=%u", MOTOR_CAN_TX_GPIO, MOTOR_CAN_RX_GPIO, MOTOR_CAN_BITRATE);
     s_initialized = true;
     return ESP_OK;
 }
 
 /**
  * @brief 在销毁队列和 TWAI 节点前停止 CAN 工作任务。
- * @note Ordering prevents tasks or callbacks from touching released resources.
+ * @note 此释放顺序可防止任务或回调访问已经释放的资源。
  */
 void motor_can_deinit(void)
 {
@@ -740,7 +679,7 @@ void motor_can_deinit(void)
         return;
     }
 
-    /* Stop worker tasks before deleting their queues or the TWAI node. */
+    /* 删除队列或 TWAI 节点之前先停止工作任务。 */
     if (s_rx_task != NULL) {
         vTaskDelete(s_rx_task);
         s_rx_task = NULL;
@@ -770,7 +709,7 @@ bool motor_can_is_initialized(void)
 
 /**
  * @brief 复制最新 CAN 遥测，并根据时间戳计算链路在线状态。
- * @param[out] snapshot Destination snapshot; NULL is ignored.
+ * @param[out] snapshot 接收状态的目标快照；传入 NULL 时忽略。
  */
 void motor_can_get_snapshot(motor_can_snapshot_t *snapshot)
 {
@@ -791,7 +730,7 @@ void motor_can_get_snapshot(motor_can_snapshot_t *snapshot)
 
 /**
  * @brief 授予或撤销 CAN 命令控制权。
- * @param enabled True when CAN is the selected motor-control transport.
+ * @param enabled 选择 CAN 作为电机控制通道时传入 true，否则传入 false。
  */
 void motor_can_set_control_enabled(bool enabled)
 {
@@ -824,7 +763,7 @@ void motor_can_set_speed_rpm(int16_t speed_rpm)
 
 /**
  * @brief 将角度环绕到 0..35999 后替换最新 CAN 位置目标。
- * @param position_cdeg Requested angle in centi-degrees.
+ * @param position_cdeg 请求角度，单位为 0.01°。
  */
 void motor_can_set_position_cdeg(uint16_t position_cdeg)
 {

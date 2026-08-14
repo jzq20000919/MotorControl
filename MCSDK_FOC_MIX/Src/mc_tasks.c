@@ -61,9 +61,13 @@ static volatile uint8_t bMCBootCompleted = ((uint8_t)0);
 /* USER CODE END Private Variables */
 
 /* Private functions ---------------------------------------------------------*/
+/** @brief 执行电机 1 中频状态机任务。 */
 void TSK_MediumFrequencyTaskM1(void);
+/** @brief 执行指定电机的中频停止处理。 */
 void TSK_MF_StopProcessing(uint8_t motor);
+/** @brief 获取指定电机的 MCI 控制接口句柄。 */
 MCI_Handle_t *GetMCI(uint8_t bMotor);
+/** @brief 在关闭 PWM 的条件下执行指定电机安全任务。 */
 void TSK_SafetyTask_PWMOFF(uint8_t motor);
 
 /* USER CODE BEGIN Private Functions */
@@ -75,6 +79,7 @@ void TSK_SafetyTask_PWMOFF(uint8_t motor);
   * @param  pMCIList pointer to the vector of MCInterface objects that will be
   *         created and initialized. The vector must have length equal to the
   *         number of motor drives.
+  * @note 中文说明：初始化 MCboot 所属模块、外设或运行状态。
   */
 __weak void MCboot( MCI_Handle_t* pMCIList[NBR_OF_MOTORS] )
 {
@@ -155,6 +160,7 @@ __weak void MCboot( MCI_Handle_t* pMCIList[NBR_OF_MOTORS] )
  * - Safety Task.
  * - Power Factor Correction Task (if enabled).
  * - User Interface task.
+ * @note 中文说明：执行 MC_RunMotorControlTasks 对应的周期任务或电机控制流程。
  */
 __weak void MC_RunMotorControlTasks(void)
 {
@@ -242,6 +248,7 @@ __weak void MC_RunMotorControlTasks(void)
   *         for drivers boot capacitors charging of motor 1.
   * @param  hTickCount number of ticks to be counted.
   * @retval void
+  * @note 中文说明：初始化 TSK_SetChargeBootCapDelayM1 所属模块、外设或运行状态。
   */
 __weak void TSK_SetChargeBootCapDelayM1(uint16_t hTickCount)
 {
@@ -253,6 +260,7 @@ __weak void TSK_SetChargeBootCapDelayM1(uint16_t hTickCount)
   *         capacitors of motor 1 has elapsed.
   * @param  none
   * @retval bool true if time has elapsed, false otherwise.
+  * @note 中文说明：初始化 TSK_ChargeBootCapDelayHasElapsedM1 所属模块、外设或运行状态。
   */
 __weak bool TSK_ChargeBootCapDelayHasElapsedM1(void)
 {
@@ -269,6 +277,7 @@ __weak bool TSK_ChargeBootCapDelayHasElapsedM1(void)
   *         time in STOP state of motor 1.
   * @param  hTickCount number of ticks to be counted.
   * @retval void
+  * @note 中文说明：停止或禁用 TSK_SetStopPermanencyTimeM1 对应的外设与控制流程。
   */
 __weak void TSK_SetStopPermanencyTimeM1(uint16_t hTickCount)
 {
@@ -280,6 +289,7 @@ __weak void TSK_SetStopPermanencyTimeM1(uint16_t hTickCount)
   *         of motor 1 has elapsed.
   * @param  none
   * @retval bool true if time is elapsed, false otherwise.
+  * @note 中文说明：停止或禁用 TSK_StopPermanencyTimeHasElapsedM1 对应的外设与控制流程。
   */
 __weak bool TSK_StopPermanencyTimeHasElapsedM1(void)
 {
@@ -306,6 +316,7 @@ __attribute__((section (".ccmram")))
   * subsystem (see the state machine(s)).
   *
   * @retval Number of the  motor instance which FOC loop was executed.
+  * @note 中文说明：执行 TSK_HighFrequencyTask 对应的周期任务或电机控制流程。
   */
 __weak uint8_t TSK_HighFrequencyTask(void)
 {
@@ -339,6 +350,7 @@ __weak uint8_t TSK_HighFrequencyTask(void)
   * @brief  Executes safety checks (e.g. bus voltage and temperature) for all drive instances.
   *
   * Faults flags are updated here.
+  * @note 中文说明：执行 TSK_SafetyTask 对应的周期任务或电机控制流程。
   */
 __weak void TSK_SafetyTask(void)
 {
@@ -362,6 +374,7 @@ __weak void TSK_SafetyTask(void)
   * @brief  Safety task implementation if  MC.M1_ON_OVER_VOLTAGE == TURN_OFF_PWM.
   * @param  bMotor Motor reference number defined
   *         \link Motors_reference_number here \endlink.
+  * @note 中文说明：执行 TSK_SafetyTask_PWMOFF 对应的周期任务或电机控制流程。
   */
 __weak void TSK_SafetyTask_PWMOFF(uint8_t bMotor)
 {
@@ -429,6 +442,7 @@ __weak void TSK_SafetyTask_PWMOFF(uint8_t bMotor)
   *
   *  This function is to be executed when a general hardware failure has been detected
   * by the microcontroller and is used to put the system in safety condition.
+  * @note 中文说明：检查 TSK_HardwareFaultTask 对应的状态、故障或完成条件。
   */
 __weak void TSK_HardwareFaultTask(void)
 {
@@ -443,6 +457,7 @@ __weak void TSK_HardwareFaultTask(void)
   /* USER CODE END TSK_HardwareFaultTask 1 */
 }
 
+/** @brief 响应 UI_HandleStartStopButton_cb 对应的应用或外设回调事件。 */
 __weak void UI_HandleStartStopButton_cb (void)
 {
 /* USER CODE BEGIN START_STOP_BTN */
@@ -460,6 +475,7 @@ __weak void UI_HandleStartStopButton_cb (void)
 
  /**
   * @brief  Locks GPIO pins used for Motor Control to prevent accidental reconfiguration.
+  * @note 中文说明：执行 mc_lock_pins 对应的模块功能。
   */
 __weak void mc_lock_pins (void)
 {

@@ -27,9 +27,13 @@
 #define MIN(a,b) ( ((a) < (b)) ? (a) : (b) )
 
 /* Local functions */
+/** @brief 检查控制端与执行端的 ASPEP 能力是否匹配。 */
 static bool ASPEP_CheckBeacon (ASPEP_Handle_t *pHandle);
+/** @brief 组装并提交一帧 ASPEP 发送数据。 */
 static uint8_t ASPEP_TXframeProcess(ASPEP_Handle_t *pHandle, uint8_t packetType, void *txBuffer, uint16_t bufferLength);
+/** @brief 发送 ASPEP 能力协商 Beacon 帧。 */
 void ASPEP_sendBeacon(ASPEP_Handle_t *pHandle, ASPEP_Capabilities_def *capabilities);
+/** @brief 发送 ASPEP 链路 Ping 帧。 */
 void ASPEP_sendPing(ASPEP_Handle_t *pHandle, uint8_t state, uint16_t PacketNumber);
 
 /** @addtogroup MCSDK
@@ -114,6 +118,7 @@ static uint8_t const CRC4_Lookup4[] =
   * table because the amount of input data is not a multiple of 8 bits.
   *
   * The resulting CRC is written in bits 28 to 31 of @p header and the whole header is returned.
+  * @note 中文说明：执行 ASPEP_ComputeHeaderCRC 对应的模块功能。
   */
 static void ASPEP_ComputeHeaderCRC(uint32_t *headerPtr)
 {
@@ -148,6 +153,7 @@ static void ASPEP_ComputeHeaderCRC(uint32_t *headerPtr)
   * and true is returned. If the result is not 0, false is returned.
   *
   * @sa ASPEP_ComputeHeaderCRC
+  * @note 中文说明：检查 ASPEP_CheckHeaderCRC 对应的状态、故障或完成条件。
   */
 static bool ASPEP_CheckHeaderCRC(uint32_t header)
 {
@@ -176,6 +182,7 @@ static bool ASPEP_CheckHeaderCRC(uint32_t header)
   * @brief  Starts ASPEP communication by configuring UART.
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
+  * @note 中文说明：启动或使能 ASPEP_start 对应的外设与控制流程。
   */
 void ASPEP_start(ASPEP_Handle_t *pHandle)
 {
@@ -203,6 +210,7 @@ void ASPEP_start(ASPEP_Handle_t *pHandle)
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
   * @param  *capabilities Matched capabilities between controller and performer
+  * @note 中文说明：编码并发送 ASPEP_sendBeacon 对应的数据或通信帧。
   */
 void ASPEP_sendBeacon(ASPEP_Handle_t *pHandle, ASPEP_Capabilities_def *capabilities)
 {
@@ -233,6 +241,7 @@ void ASPEP_sendBeacon(ASPEP_Handle_t *pHandle, ASPEP_Capabilities_def *capabilit
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
   * @param  errorInfo Information on the encountered error
+  * @note 中文说明：编码并发送 ASPEP_sendNack 对应的数据或通信帧。
   */
 static void ASPEP_sendNack(ASPEP_Handle_t *pHandle, uint8_t errorInfo)
 {
@@ -247,6 +256,7 @@ static void ASPEP_sendNack(ASPEP_Handle_t *pHandle, uint8_t errorInfo)
   * @param  *pHandle Handler of the current instance of the ASPEP component
   * @param  cBit Set to 1 if Performer has not been reset during communication
   * @param  packetNumber Number of requested packet incremented throughout the entire communication process, reset when communication is aborted or lost
+  * @note 中文说明：编码并发送 ASPEP_sendPing 对应的数据或通信帧。
   */
 void ASPEP_sendPing(ASPEP_Handle_t *pHandle, uint8_t cBit, uint16_t packetNumber)
 {
@@ -281,6 +291,7 @@ void ASPEP_sendPing(ASPEP_Handle_t *pHandle, uint8_t cBit, uint16_t packetNumber
   * @param  syncAsync Type of requested buffer, can be synchronous or asynchronous
   *
   * @return Returns true if there is a writable buffer. False otherwise.
+  * @note 中文说明：获取 ASPEP_getBuffer 对应的状态、配置或计算结果。
   */
 bool ASPEP_getBuffer(MCTL_Handle_t *pSupHandle, void **buffer,  uint8_t syncAsync)
 {
@@ -351,6 +362,7 @@ bool ASPEP_getBuffer(MCTL_Handle_t *pSupHandle, void **buffer,  uint8_t syncAsyn
   * @param  *pHandle Handler of the current instance of the ASPEP component
   *
   * @return Returns true if controller's capabilities match performer's one. False otherwise.
+  * @note 中文说明：检查 ASPEP_CheckBeacon 对应的状态、故障或完成条件。
   */
 bool ASPEP_CheckBeacon (ASPEP_Handle_t *pHandle)
 {
@@ -400,6 +412,7 @@ bool ASPEP_CheckBeacon (ASPEP_Handle_t *pHandle)
   * @param  syncAsync nature of the communication : synchronous or asynchronous
   *
   * @return Returns an ASPEP response defined in aspep.h
+  * @note 中文说明：编码并发送 ASPEP_sendPacket 对应的数据或通信帧。
   */
 uint8_t ASPEP_sendPacket(MCTL_Handle_t *pSupHandle, void *txBuffer, uint16_t txDataLength, uint8_t syncAsync)
 {
@@ -475,6 +488,7 @@ uint8_t ASPEP_sendPacket(MCTL_Handle_t *pSupHandle, void *txBuffer, uint16_t txD
   * @param  bufferLength Size of the packet to be sent : Header + Data
   *
   * @return Returns an ASPEP response defined in aspep.h
+  * @note 中文说明：执行 ASPEP_TXframeProcess 对应的周期任务或电机控制流程。
   */
 uint8_t ASPEP_TXframeProcess(ASPEP_Handle_t *pHandle, uint8_t dataType, void *txBuffer, uint16_t bufferLength)
 {
@@ -586,6 +600,7 @@ uint8_t ASPEP_TXframeProcess(ASPEP_Handle_t *pHandle, uint8_t dataType, void *tx
   * Therefore, there is no need to protect this ISR against another higher priority ISR (HF Task).
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
+  * @note 中文说明：编码并发送 ASPEP_HWDataTransmittedIT 对应的数据或通信帧。
   */
 void ASPEP_HWDataTransmittedIT(ASPEP_Handle_t *pHandle)
 {
@@ -832,6 +847,7 @@ uint8_t *ASPEP_RXframeProcess(MCTL_Handle_t *pSupHandle, uint16_t *packetLength)
   * If the packet received contains an error in the header, the HW IP will be re-synchronised first, and DMA will be configured after.
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
+  * @note 中文说明：接收并解析 ASPEP_HWDataReceivedIT 对应的数据或通信帧。
   */
 void ASPEP_HWDataReceivedIT(ASPEP_Handle_t *pHandle)
 {
@@ -920,6 +936,7 @@ void ASPEP_HWDataReceivedIT(ASPEP_Handle_t *pHandle)
   * @brief  Resets DMA after debugger has stopped the MCU.
   *
   * @param  *pHandle Handler of the current instance of the ASPEP component
+  * @note 中文说明：释放或复位 ASPEP_HWReset 对应的外设与模块状态。
   */
 void ASPEP_HWReset(ASPEP_Handle_t *pHandle)
 {

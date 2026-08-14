@@ -26,6 +26,7 @@
 #include "register_interface.h"
 #include "mc_config.h"
 
+/** @brief 获取 HF_GetIDSize 对应的状态、配置或计算结果。 */
 uint8_t HF_GetIDSize(uint16_t dataID)
 {
   uint8_t typeID = ((uint8_t)dataID) & TYPE_MASK;
@@ -61,6 +62,7 @@ uint8_t HF_GetIDSize(uint16_t dataID)
   return (result);
 }
 
+/** @brief 获取 HF_GetPtrReg 对应的状态、配置或计算结果。 */
 __weak uint8_t HF_GetPtrReg(uint16_t dataID, void **dataPtr)
 {
 

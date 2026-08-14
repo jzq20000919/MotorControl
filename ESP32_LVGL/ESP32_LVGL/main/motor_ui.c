@@ -9,41 +9,16 @@
 #include "board_keys.h"
 #include "mqtt_manager.h"
 #include "motor_link.h"
+#include "motor_ui_events.h"
+#include "motor_ui_style.h"
 #include "wifi_manager.h"
-
-#define UI_COLOR_BACKGROUND       0x08111FU
-#define UI_COLOR_PANEL            0x111D2EU
-#define UI_COLOR_PANEL_LIGHT      0x1B2A41U
-#define UI_COLOR_TEXT             0xF4F7FBU
-#define UI_COLOR_MUTED            0x8FA3BFU
-#define UI_COLOR_BLUE             0x2D8CFFU
-#define UI_COLOR_CYAN             0x20D6C7U
-#define UI_COLOR_GREEN            0x32D583U
-#define UI_COLOR_RED              0xFF304FU
-#define UI_COLOR_YELLOW           0xFFB454U
 
 #define UI_VIEWPORT_TOP           22
 #define UI_PAGE_TOP               0
 #define UI_PAGE_HEIGHT            218
 #define UI_CHART_POINTS           100U
 #define UI_SPEED_LIMIT_RPM        2600
-#define UI_SWIPE_MIN_DISTANCE     45
 #define UI_PAGE_ANIMATION_MS      160U
-
-typedef enum
-{
-    UI_PAGE_HOME = 0,
-    UI_PAGE_FEEDBACK,
-    UI_PAGE_UART,
-    UI_PAGE_CAN,
-    UI_PAGE_WIFI,
-    UI_PAGE_MQTT,
-    UI_PAGE_SPEED,
-    UI_PAGE_POSITION,
-    UI_PAGE_SPEED_CHART,
-    UI_PAGE_CURRENT_CHART,
-    UI_PAGE_COUNT
-} ui_page_t;
 
 static const char *s_page_names[UI_PAGE_COUNT] = {
     "MENU",
@@ -143,8 +118,6 @@ static uint32_t s_last_chart_tick;
 static uint8_t s_key_candidate;
 static uint8_t s_key_stable;
 static uint8_t s_key_debounce_count;
-static lv_point_t s_swipe_start;
-static bool s_swipe_tracking;
 static bool s_page_animating;
 static uint32_t s_wifi_revision = UINT32_MAX;
 static uint32_t s_wifi_scan_generation = UINT32_MAX;
@@ -159,50 +132,30 @@ static const uint32_t s_uart_baud_rates[] = {
     1500000U, 1843200U, 2000000U,
 };
 
-static lv_obj_t *ui_create_label(
-    lv_obj_t *parent,
-    const char *text,
-    uint32_t color,
-    const lv_font_t *font)
-{
-    lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(
-        label, lv_color_hex(color), LV_PART_MAIN);
-    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-    return label;
-}
-
-/** @brief 为 LVGL 对象应用统一的圆角面板样式。 */
-static void ui_style_panel(lv_obj_t *object, int32_t radius)
-{
-    lv_obj_set_style_bg_color(
-        object, lv_color_hex(UI_COLOR_PANEL), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(object, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(
-        object, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_set_style_radius(object, radius, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(object, 10, LV_PART_MAIN);
-    lv_obj_remove_flag(object, LV_OBJ_FLAG_SCROLLABLE);
-}
-
 /** @brief 返回有符号 32 位整数的绝对值。 */
 static int32_t ui_abs_i32(int32_t value)
 {
     return value < 0 ? -value : value;
 }
 
-/** @brief 将 UI 速度值限制在电机协议允许的 rpm 范围内。 */
-static int16_t ui_clamp_speed(int32_t speed)
+/**
+ * @brief 创建采用指定文本、颜色和字体的 LVGL 标签。
+ * @param parent 标签的父对象。
+ * @param text 标签初始文本。
+ * @param color 文本使用的主题颜色角色。
+ * @param font 标签使用的 LVGL 字体。
+ * @return 新创建的标签对象。
+ */
+static lv_obj_t *ui_create_label(
+    lv_obj_t *parent,
+    const char *text,
+    motor_ui_style_color_t color,
+    const lv_font_t *font)
 {
-    if (speed > UI_SPEED_LIMIT_RPM) {
-        return UI_SPEED_LIMIT_RPM;
-    }
-    if (speed < -UI_SPEED_LIMIT_RPM) {
-        return -UI_SPEED_LIMIT_RPM;
-    }
-    return (int16_t)speed;
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    motor_ui_style_label(label, color, font);
+    return label;
 }
 
 /** @brief Wi-Fi 文本输入结束后隐藏共用软键盘。 */
@@ -225,7 +178,7 @@ static void ui_hide_mqtt_keyboard(void)
 
 /**
  * @brief 不使用动画，直接显示 @p page 指定的页面。
- * @note Used for initial state and animation completion; validates page index.
+ * @note 用于初始状态和动画完成后的页面切换，并会校验页面编号。
  */
 static void ui_show_page(ui_page_t page)
 {
@@ -286,7 +239,7 @@ static void ui_page_animation_in_completed(lv_anim_t *animation)
 
 /**
  * @brief 将当前页面以纵向动画切换到 @p page。
- * @param forward True for next-page direction; false for previous-page direction.
+ * @param forward 为 true 时按下一页方向切换，为 false 时按上一页方向切换。
  */
 static void ui_animate_to_page(ui_page_t page, bool forward)
 {
@@ -296,10 +249,9 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     }
 
     /*
-     * The large CAN title was the only object still leaving visible pixels
-     * on this single-buffer i80 panel.  Use an atomic hide/show transition
-     * whenever CAN is one side of the switch, then invalidate the complete
-     * screen.  Other pages keep the requested vertical animation.
+     * 在单缓冲 I80 面板上，大号 CAN 标题是唯一仍会残留像素的对象。切换起点
+     * 或终点为 CAN 页面时采用原子隐藏/显示并使全屏失效；其他页面仍使用
+     * 请求的纵向动画。
      */
     if (s_current_page == UI_PAGE_CAN || page == UI_PAGE_CAN) {
         ui_show_page(page);
@@ -342,8 +294,7 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     lv_anim_set_duration(&animation, UI_PAGE_ANIMATION_MS);
     lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
     lv_anim_set_user_data(&animation, outgoing);
-    lv_anim_set_completed_cb(
-        &animation, ui_page_animation_out_completed);
+    lv_anim_set_completed_cb(&animation, ui_page_animation_out_completed);
     lv_anim_start(&animation);
 
     lv_anim_init(&animation);
@@ -353,470 +304,30 @@ static void ui_animate_to_page(ui_page_t page, bool forward)
     lv_anim_set_duration(&animation, UI_PAGE_ANIMATION_MS);
     lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
     lv_anim_set_user_data(&animation, incoming);
-    lv_anim_set_completed_cb(
-        &animation, ui_page_animation_in_completed);
+    lv_anim_set_completed_cb(&animation, ui_page_animation_in_completed);
     lv_anim_start(&animation);
 }
 
-/** @brief 处理导航按钮点击，并启动目标页面切换动画。 */
-static void ui_navigation_event(lv_event_t *event)
+/** @brief 向事件模块返回当前页面编号。 */
+ui_page_t motor_ui_internal_current_page(void)
 {
-    const ui_page_t page =
-        (ui_page_t)(uintptr_t)lv_event_get_user_data(event);
+    return s_current_page;
+}
+
+/** @brief 接收事件模块的导航请求并执行页面切换。 */
+void motor_ui_internal_navigate(ui_page_t page)
+{
     ui_animate_to_page(page, page >= s_current_page);
 }
 
 /**
- * @brief 将获得焦点的文本框事件转发给对应软键盘。
- * @note Runs in LVGL context and must not perform blocking network work.
+ * @brief 创建控制模式按钮并返回其文本标签。
+ * @param parent 按钮的父页面。
+ * @param text 按钮显示文本。
+ * @param callback 点击按钮时调用的事件回调。
+ * @param[out] label_out 接收按钮内部标签对象的地址。
+ * @return 新创建的按钮对象。
  */
-static void ui_input_event(lv_event_t *event)
-{
-    lv_indev_t *indev = lv_event_get_user_data(event);
-    const lv_event_code_t code = lv_event_get_code(event);
-    lv_point_t point;
-
-    if (indev == NULL) {
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSED &&
-        s_current_page == UI_PAGE_SPEED_CHART) {
-        lv_indev_get_point(indev, &s_swipe_start);
-        s_swipe_tracking = true;
-        return;
-    }
-
-    if (code != LV_EVENT_RELEASED || !s_swipe_tracking) {
-        return;
-    }
-
-    s_swipe_tracking = false;
-    if (s_current_page != UI_PAGE_SPEED_CHART) {
-        return;
-    }
-
-    lv_indev_get_point(indev, &point);
-    const int32_t delta_x = point.x - s_swipe_start.x;
-    const int32_t delta_y = point.y - s_swipe_start.y;
-    if (ui_abs_i32(delta_y) < UI_SWIPE_MIN_DISTANCE ||
-        ui_abs_i32(delta_y) <= ui_abs_i32(delta_x)) {
-        return;
-    }
-
-    motor_link_snapshot_t snapshot;
-    motor_link_get_snapshot(&snapshot);
-    const int32_t current_reference = s_speed_command_pending
-        ? s_pending_speed_rpm
-        : snapshot.reference_speed_rpm;
-    s_pending_speed_rpm = ui_clamp_speed(
-        current_reference + (delta_y < 0 ? 100 : -100));
-    s_speed_command_pending = true;
-    s_speed_command_tick = lv_tick_get();
-    motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-    motor_link_set_speed_rpm(s_pending_speed_rpm);
-}
-
-/** @brief 点击对应 UI 按钮时请求切换到速度控制模式。 */
-static void ui_speed_mode_event(lv_event_t *event)
-{
-    (void)event;
-    motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-    motor_link_start_motor();
-}
-
-/** @brief 点击对应 UI 按钮时请求切换到位置控制模式。 */
-static void ui_position_mode_event(lv_event_t *event)
-{
-    (void)event;
-    motor_link_set_mode(MOTOR_LINK_MODE_POSITION);
-    motor_link_start_motor();
-}
-
-/** @brief 从 UI 请求停止电机，由当前活动的 motor_link 通道发送。 */
-static void ui_stop_event(lv_event_t *event)
-{
-    (void)event;
-    s_speed_command_pending = false;
-    s_position_command_pending = false;
-    s_speed_dragging = false;
-    s_position_dragging = false;
-    motor_link_stop_motor();
-}
-
-/** @brief 请求确认/复位 STM32 上报的电机故障。 */
-static void ui_ack_fault_event(lv_event_t *event)
-{
-    (void)event;
-    motor_link_acknowledge_fault();
-}
-
-/**
- * @brief 读取选定的 UART 波特率并请求启用 UART 控制。
- * @note Connection completion is asynchronous; status is shown by periodic refresh.
- */
-static void ui_uart_reconnect_event(lv_event_t *event)
-{
-    (void)event;
-    uint16_t selected = lv_dropdown_get_selected(s_baud_dropdown);
-    const uint16_t count = (uint16_t)(sizeof(s_uart_baud_rates) /
-                                      sizeof(s_uart_baud_rates[0]));
-    if (selected >= count) {
-        selected = 0U;
-    }
-    const uint32_t baud = s_uart_baud_rates[selected];
-    if (motor_link_connect_uart(baud) == ESP_OK) {
-        s_speed_command_pending = false;
-        s_position_command_pending = false;
-        lv_label_set_text_fmt(s_home_state_label,
-                              "SERIAL CONNECTING %lu", (unsigned long)baud);
-    } else {
-        lv_label_set_text(s_home_state_label, "SERIAL CONNECT FAILED");
-    }
-}
-
-/** @brief 初始化/选择 CAN 作为唯一活动电机控制通道。 */
-static void ui_can_connect_event(lv_event_t *event)
-{
-    (void)event;
-    if (motor_link_connect_can() == ESP_OK) {
-        s_speed_command_pending = false;
-        s_position_command_pending = false;
-        lv_label_set_text(s_can_state_label, "CAN CONNECTING 500K");
-    } else {
-        lv_label_set_text(s_can_state_label, "CAN CONNECT FAILED");
-    }
-}
-
-/** @brief 通过 UI 操作关闭 UART 控制并释放其资源。 */
-static void ui_uart_disconnect_event(lv_event_t *event)
-{
-    (void)event;
-    s_speed_command_pending = false;
-    s_position_command_pending = false;
-    motor_link_disconnect_uart();
-    lv_label_set_text(s_home_state_label, "USART DISCONNECTED");
-}
-
-/** @brief 通过 UI 操作关闭 CAN 控制并释放其资源。 */
-static void ui_can_disconnect_event(lv_event_t *event)
-{
-    (void)event;
-    s_speed_command_pending = false;
-    s_position_command_pending = false;
-    motor_link_disconnect_can();
-    lv_label_set_text(s_can_state_label, "CAN DISCONNECTED");
-}
-
-/** @brief 刷新当前选中 AP 的 Wi-Fi 页面详情文本。 */
-static void ui_wifi_update_selected_detail(void)
-{
-    if (s_wifi_detail_label == NULL) {
-        return;
-    }
-    if (s_wifi_network_count == 0U) {
-        lv_label_set_text(s_wifi_detail_label, "No network selected");
-        return;
-    }
-
-    uint16_t selected =
-        lv_dropdown_get_selected(s_wifi_network_dropdown);
-    if (selected >= s_wifi_network_count) {
-        selected = 0U;
-    }
-
-    wifi_manager_snapshot_t snapshot;
-    wifi_manager_get_snapshot(&snapshot);
-    int rssi = 0;
-    if (selected < snapshot.ap_count &&
-        strcmp(
-            snapshot.aps[selected].ssid,
-            s_wifi_network_ssids[selected]) == 0) {
-        rssi = snapshot.aps[selected].rssi;
-    }
-    lv_label_set_text_fmt(
-        s_wifi_detail_label,
-        "%s\n%d dBm  %s",
-        s_wifi_network_ssids[selected],
-        rssi,
-        s_wifi_network_secured[selected] ? "SECURED" : "OPEN");
-}
-
-/** @brief Wi-Fi 网络列表选择变化时更新选中 AP 索引。 */
-static void ui_wifi_network_event(lv_event_t *event)
-{
-    (void)event;
-    ui_wifi_update_selected_detail();
-}
-
-/** @brief Wi-Fi 密码输入框获得焦点时显示软键盘。 */
-static void ui_wifi_password_event(lv_event_t *event)
-{
-    (void)event;
-    lv_keyboard_set_textarea(
-        s_wifi_keyboard,
-        s_wifi_password_textarea);
-    lv_obj_remove_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(s_wifi_keyboard);
-}
-
-/** @brief Wi-Fi 键盘完成或取消操作后关闭软键盘。 */
-static void ui_wifi_keyboard_event(lv_event_t *event)
-{
-    const lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
-        ui_hide_wifi_keyboard();
-    }
-}
-
-/** @brief 启动异步 AP 扫描，扫描结果由 UI 定时器负责显示。 */
-static void ui_wifi_scan_event(lv_event_t *event)
-{
-    (void)event;
-    const esp_err_t result = wifi_manager_scan_async();
-    if (result != ESP_OK) {
-        lv_label_set_text_fmt(
-            s_wifi_page_state_label,
-            "Scan unavailable: %s",
-            esp_err_to_name(result));
-    }
-}
-
-/**
- * @brief 将选中的 SSID 与输入密码提交给异步 Wi-Fi 管理器。
- */
-static void ui_wifi_connect_event(lv_event_t *event)
-{
-    (void)event;
-    if (s_wifi_network_count == 0U) {
-        lv_label_set_text(s_wifi_page_state_label, "Scan and select a network");
-        return;
-    }
-
-    uint16_t selected =
-        lv_dropdown_get_selected(s_wifi_network_dropdown);
-    if (selected >= s_wifi_network_count) {
-        selected = 0U;
-    }
-    const char *password =
-        lv_textarea_get_text(s_wifi_password_textarea);
-    if (s_wifi_network_secured[selected] && strlen(password) < 8U) {
-        lv_label_set_text(
-            s_wifi_page_state_label,
-            "Secure network password must be 8+ characters");
-        return;
-    }
-    if (!s_wifi_network_secured[selected]) {
-        password = "";
-    }
-
-    ui_hide_wifi_keyboard();
-    const esp_err_t result = wifi_manager_connect(
-        s_wifi_network_ssids[selected],
-        password);
-    if (result != ESP_OK) {
-        lv_label_set_text_fmt(
-            s_wifi_page_state_label,
-            "Connect unavailable: %s",
-            esp_err_to_name(result));
-    }
-}
-
-/** @brief 请求用户主动断开 Wi-Fi，并关闭自动重连。 */
-static void ui_wifi_disconnect_event(lv_event_t *event)
-{
-    (void)event;
-    ui_hide_wifi_keyboard();
-    const esp_err_t result = wifi_manager_disconnect();
-    if (result != ESP_OK) {
-        lv_label_set_text_fmt(
-            s_wifi_page_state_label,
-            "Disconnect failed: %s",
-            esp_err_to_name(result));
-    }
-}
-
-/** @brief MQTT Broker URI 输入框获得焦点时显示软键盘。 */
-static void ui_mqtt_uri_event(lv_event_t *event)
-{
-    (void)event;
-    lv_keyboard_set_textarea(s_mqtt_keyboard, s_mqtt_uri_textarea);
-    lv_obj_remove_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(s_mqtt_keyboard);
-}
-
-/** @brief MQTT 键盘完成或取消操作后关闭软键盘。 */
-static void ui_mqtt_keyboard_event(lv_event_t *event)
-{
-    const lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
-        ui_hide_mqtt_keyboard();
-    }
-}
-
-/** @brief 通过 mqtt_manager 校验 Broker URI 并排队连接任务。 */
-static void ui_mqtt_connect_event(lv_event_t *event)
-{
-    (void)event;
-    wifi_manager_snapshot_t wifi_snapshot;
-    wifi_manager_get_snapshot(&wifi_snapshot);
-    if (!wifi_snapshot.connected) {
-        lv_label_set_text(
-            s_mqtt_page_state_label,
-            "Connect Wi-Fi before MQTT");
-        return;
-    }
-
-    ui_hide_mqtt_keyboard();
-    const esp_err_t result = mqtt_manager_connect_async(
-        lv_textarea_get_text(s_mqtt_uri_textarea));
-    if (result != ESP_OK) {
-        lv_label_set_text_fmt(
-            s_mqtt_page_state_label,
-            "Invalid broker URI: %s",
-            esp_err_to_name(result));
-    }
-}
-
-/** @brief 根据 UI 操作排队执行 MQTT 客户端断开。 */
-static void ui_mqtt_disconnect_event(lv_event_t *event)
-{
-    (void)event;
-    ui_hide_mqtt_keyboard();
-    const esp_err_t result = mqtt_manager_disconnect_async();
-    if (result != ESP_OK) {
-        lv_label_set_text_fmt(
-            s_mqtt_page_state_label,
-            "Disconnect failed: %s",
-            esp_err_to_name(result));
-    }
-}
-
-/**
- * @brief 发布一条 JSON 测试消息，并在 UI 标签中显示结果。
- * @param topic Destination MQTT topic.
- * @param payload Null-terminated JSON test payload.
- */
-static void ui_mqtt_publish_test(
-    const char *topic,
-    const char *payload)
-{
-    const esp_err_t result = mqtt_manager_publish(topic, payload);
-    if (result != ESP_OK) {
-        lv_label_set_text(
-            s_mqtt_page_state_label,
-            "MQTT is offline - connect first");
-    }
-}
-
-/** @brief 从 MQTT 页面发布 Broker 连通性测试消息。 */
-static void ui_mqtt_ping_event(lv_event_t *event)
-{
-    (void)event;
-    ui_mqtt_publish_test(
-        "motor/hmi/test/ping",
-        "PING from ESP32-S3");
-}
-
-/** @brief 发布当前 Wi-Fi 状态的 JSON 快照测试消息。 */
-static void ui_mqtt_wifi_event(lv_event_t *event)
-{
-    (void)event;
-    wifi_manager_snapshot_t snapshot;
-    wifi_manager_get_snapshot(&snapshot);
-    char payload[128];
-    snprintf(
-        payload,
-        sizeof(payload),
-        "ssid=%s ip=%s",
-        snapshot.ssid,
-        snapshot.ip_address);
-    ui_mqtt_publish_test("motor/hmi/test/wifi", payload);
-}
-
-/** @brief 发布当前电机状态的 JSON 快照测试消息。 */
-static void ui_mqtt_motor_event(lv_event_t *event)
-{
-    (void)event;
-    motor_link_snapshot_t snapshot;
-    motor_link_get_snapshot(&snapshot);
-    char payload[160];
-    snprintf(
-        payload,
-        sizeof(payload),
-        "running=%u mode=%s speed=%d position=%u.%02u",
-        snapshot.motor_running ? 1U : 0U,
-        snapshot.mode == MOTOR_LINK_MODE_SPEED ? "speed" : "position",
-        snapshot.measured_speed_rpm,
-        snapshot.current_position_cdeg / 100U,
-        snapshot.current_position_cdeg % 100U);
-    ui_mqtt_publish_test("motor/hmi/test/motor", payload);
-}
-
-/**
- * @brief 拖动时更新速度文本，释放时提交最终 rpm 目标值。
- *
- * Avoiding per-pixel command transmission prevents the serial bus and motor
- * controller from being flooded with intermediate slider values.
- */
-static void ui_speed_slider_event(lv_event_t *event)
-{
-    const lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_PRESSED) {
-        s_speed_dragging = true;
-        return;
-    }
-    if (code == LV_EVENT_VALUE_CHANGED) {
-        const int32_t speed = lv_slider_get_value(s_speed_slider);
-        lv_label_set_text_fmt(
-            s_speed_slider_value, "%ld RPM", (long)speed);
-        return;
-    }
-    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        if (s_speed_dragging) {
-            s_pending_speed_rpm =
-                (int16_t)lv_slider_get_value(s_speed_slider);
-            s_speed_command_pending = true;
-            s_speed_command_tick = lv_tick_get();
-            motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
-            motor_link_set_speed_rpm(s_pending_speed_rpm);
-        }
-        s_speed_dragging = false;
-    }
-}
-
-/**
- * @brief 拖动时更新位置文本，释放时提交最终角度目标值。
- */
-static void ui_position_slider_event(lv_event_t *event)
-{
-    const lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_PRESSED) {
-        s_position_dragging = true;
-    }
-    if (code == LV_EVENT_VALUE_CHANGED) {
-        const int32_t cdeg = lv_slider_get_value(s_position_slider);
-        lv_label_set_text_fmt(
-            s_position_target_label,
-            "%3ld.%02ld deg",
-            (long)(cdeg / 100L),
-            (long)(cdeg % 100L));
-        return;
-    }
-
-    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        if (s_position_dragging) {
-            s_pending_position_cdeg =
-                (uint16_t)lv_slider_get_value(s_position_slider);
-            s_position_command_pending = true;
-            s_position_command_tick = lv_tick_get();
-            motor_link_set_mode(MOTOR_LINK_MODE_POSITION);
-            motor_link_set_position_cdeg(s_pending_position_cdeg);
-        }
-        s_position_dragging = false;
-    }
-}
-
 static lv_obj_t *ui_create_mode_button(
     lv_obj_t *parent,
     const char *text,
@@ -825,9 +336,7 @@ static lv_obj_t *ui_create_mode_button(
 {
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_set_size(button, 116, 40);
-    lv_obj_set_style_radius(button, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        button, lv_color_hex(UI_COLOR_BLUE), LV_PART_MAIN);
+    motor_ui_style_button(button, UI_COLOR_BLUE, 12);
     lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *label =
@@ -837,6 +346,13 @@ static lv_obj_t *ui_create_mode_button(
     return button;
 }
 
+/**
+ * @brief 创建指定尺寸的红色电机停止按钮。
+ * @param parent 按钮的父页面。
+ * @param width 按钮宽度，单位为像素。
+ * @param height 按钮高度，单位为像素。
+ * @return 新创建的停止按钮对象。
+ */
 static lv_obj_t *ui_create_stop_button(
     lv_obj_t *parent,
     int32_t width,
@@ -844,22 +360,18 @@ static lv_obj_t *ui_create_stop_button(
 {
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_set_size(button, width, height);
-    lv_obj_set_style_radius(button, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        button, lv_color_hex(UI_COLOR_RED), LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        button, ui_stop_event, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *label = ui_create_label(
-        button, "STOP", UI_COLOR_TEXT, &lv_font_montserrat_14);
+    motor_ui_style_button(button, UI_COLOR_RED, 12);
+    lv_obj_add_event_cb(button, motor_ui_stop_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label = ui_create_label(button, "STOP", UI_COLOR_TEXT, &lv_font_montserrat_14);
     lv_obj_center(label);
     return button;
 }
 
 /**
  * @brief 创建带统一样式的导航按钮，并绑定目标页面事件。
- * @param parent Page that owns the button.
- * @param text Visible button caption.
- * @param destination Page selected when clicked.
+ * @param parent 按钮所属的页面对象。
+ * @param text 按钮显示的标题文本。
+ * @param page 点击后切换到的目标页面。
  */
 static void ui_create_navigation_button(
     lv_obj_t *parent,
@@ -870,35 +382,22 @@ static void ui_create_navigation_button(
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_set_size(button, 286, 36);
     lv_obj_set_pos(button, 1, y);
-    lv_obj_set_style_radius(button, 9, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        button, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        button, ui_navigation_event, LV_EVENT_CLICKED,
-        (void *)(uintptr_t)page);
-    lv_obj_t *label = ui_create_label(
-        button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
+    motor_ui_style_button(button, UI_COLOR_PANEL_LIGHT, 9);
+    lv_obj_add_event_cb(button, motor_ui_navigation_event, LV_EVENT_CLICKED, (void *)(uintptr_t)page);
+    lv_obj_t *label = ui_create_label(button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(label);
 }
 
 /** @brief 创建包含全部功能子页面入口的首页。 */
 static void ui_create_navigation_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "PAGE SELECT", UI_COLOR_TEXT, &lv_font_montserrat_14);
+    lv_obj_t *title = ui_create_label(parent, "PAGE SELECT", UI_COLOR_TEXT, &lv_font_montserrat_14);
     lv_obj_set_pos(title, 8, 2);
 
     lv_obj_t *list = lv_obj_create(parent);
     lv_obj_set_size(list, 304, 188);
     lv_obj_set_pos(list, 8, 26);
-    lv_obj_set_style_bg_color(
-        list, lv_color_hex(UI_COLOR_PANEL), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(
-        list, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_set_style_border_width(list, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(list, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(list, 7, LV_PART_MAIN);
+    motor_ui_style_navigation_list(list);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
@@ -917,205 +416,153 @@ static void ui_create_navigation_page(lv_obj_t *parent)
 /** @brief 创建实时电机反馈/状态页面及其数值标签。 */
 static void ui_create_feedback_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "MOTOR FEEDBACK", UI_COLOR_TEXT, &lv_font_montserrat_14);
+    lv_obj_t *title = ui_create_label(parent, "MOTOR FEEDBACK", UI_COLOR_TEXT, &lv_font_montserrat_14);
     lv_obj_set_pos(title, 8, 1);
 
     lv_obj_t *speed_panel = lv_obj_create(parent);
     lv_obj_set_size(speed_panel, 151, 61);
     lv_obj_set_pos(speed_panel, 6, 20);
-    ui_style_panel(speed_panel, 8);
-    lv_obj_set_style_pad_all(speed_panel, 6, LV_PART_MAIN);
-    lv_obj_t *label = ui_create_label(
-        speed_panel, "SPEED", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    motor_ui_style_panel(speed_panel, 8, 6);
+    lv_obj_t *label = ui_create_label(speed_panel, "SPEED", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(label, 0, 0);
-    s_home_speed_measured_label = ui_create_label(
-        speed_panel, "0 RPM", UI_COLOR_CYAN, &lv_font_montserrat_20);
+    s_home_speed_measured_label = ui_create_label(speed_panel, "0 RPM", UI_COLOR_CYAN, &lv_font_montserrat_20);
     lv_obj_set_pos(s_home_speed_measured_label, 0, 14);
-    s_home_speed_target_label = ui_create_label(
-        speed_panel, "TARGET 0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
+    s_home_speed_target_label = ui_create_label(speed_panel, "TARGET 0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_speed_target_label, 0, 39);
 
     lv_obj_t *position_panel = lv_obj_create(parent);
     lv_obj_set_size(position_panel, 151, 61);
     lv_obj_set_pos(position_panel, 163, 20);
-    ui_style_panel(position_panel, 8);
-    lv_obj_set_style_pad_all(position_panel, 6, LV_PART_MAIN);
-    label = ui_create_label(
-        position_panel, "POSITION", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    motor_ui_style_panel(position_panel, 8, 6);
+    label = ui_create_label(position_panel, "POSITION", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(label, 0, 0);
-    s_home_position_current_label = ui_create_label(
-        position_panel, "0.00 deg", UI_COLOR_CYAN, &lv_font_montserrat_20);
+    s_home_position_current_label = ui_create_label(position_panel, "0.00 deg", UI_COLOR_CYAN, &lv_font_montserrat_20);
     lv_obj_set_pos(s_home_position_current_label, 0, 14);
-    s_home_position_target_label = ui_create_label(
-        position_panel, "TARGET 0.00 deg", UI_COLOR_TEXT,
-        &lv_font_montserrat_12);
+    s_home_position_target_label = ui_create_label(position_panel, "TARGET 0.00 deg", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_position_target_label, 0, 39);
 
     lv_obj_t *electrical_panel = lv_obj_create(parent);
     lv_obj_set_size(electrical_panel, 308, 66);
     lv_obj_set_pos(electrical_panel, 6, 85);
-    ui_style_panel(electrical_panel, 8);
-    lv_obj_set_style_pad_all(electrical_panel, 6, LV_PART_MAIN);
-    label = ui_create_label(
-        electrical_panel, "ELECTRICAL FEEDBACK", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    motor_ui_style_panel(electrical_panel, 8, 6);
+    label = ui_create_label(electrical_panel, "ELECTRICAL FEEDBACK", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(label, 0, 0);
-    s_home_current_label = ui_create_label(
-        electrical_panel, "Iq     0 mA\nId     0 mA", UI_COLOR_TEXT,
-        &lv_font_montserrat_12);
+    s_home_current_label = ui_create_label(electrical_panel, "Iq     0 mA\nId     0 mA", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_current_label, 0, 17);
-    s_home_current_reference_label = ui_create_label(
-        electrical_panel, "Iq*    0 mA\nId*    0 mA", UI_COLOR_GREEN,
-        &lv_font_montserrat_12);
+    s_home_current_reference_label = ui_create_label(electrical_panel, "Iq*    0 mA\nId*    0 mA", UI_COLOR_GREEN, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_current_reference_label, 104, 17);
-    s_home_voltage_label = ui_create_label(
-        electrical_panel, "Uq     0 mV\nUd     0 mV", UI_COLOR_YELLOW,
-        &lv_font_montserrat_12);
+    s_home_voltage_label = ui_create_label(electrical_panel, "Uq     0 mV\nUd     0 mV", UI_COLOR_YELLOW, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_voltage_label, 208, 17);
 
     lv_obj_t *status_panel = lv_obj_create(parent);
     lv_obj_set_size(status_panel, 308, 57);
     lv_obj_set_pos(status_panel, 6, 155);
-    ui_style_panel(status_panel, 8);
-    lv_obj_set_style_pad_all(status_panel, 6, LV_PART_MAIN);
-    s_home_mode_label = ui_create_label(
-        status_panel, "MODE SPEED", UI_COLOR_TEXT, &lv_font_montserrat_12);
+    motor_ui_style_panel(status_panel, 8, 6);
+    s_home_mode_label = ui_create_label(status_panel, "MODE SPEED", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_mode_label, 0, 1);
-    s_home_run_label = ui_create_label(
-        status_panel, "STATE STOPPED", UI_COLOR_YELLOW,
-        &lv_font_montserrat_12);
+    s_home_run_label = ui_create_label(status_panel, "STATE STOPPED", UI_COLOR_YELLOW, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_run_label, 150, 1);
-    s_home_transport_label = ui_create_label(
-        status_panel, "LINK NONE", UI_COLOR_RED, &lv_font_montserrat_12);
+    s_home_transport_label = ui_create_label(status_panel, "LINK NONE", UI_COLOR_RED, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_transport_label, 0, 25);
-    s_home_fault_label = ui_create_label(
-        status_panel, "FAULT 0x0000", UI_COLOR_GREEN,
-        &lv_font_montserrat_12);
+    s_home_fault_label = ui_create_label(status_panel, "FAULT 0x0000", UI_COLOR_GREEN, &lv_font_montserrat_12);
     lv_obj_set_pos(s_home_fault_label, 150, 25);
 }
 
 /** @brief 创建 UART 通道配置与诊断页面。 */
 static void ui_create_uart_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "USART COMMUNICATION", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_t *title = ui_create_label(parent, "USART COMMUNICATION", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_t *port = ui_create_label(
-        parent, "PORT1  GPIO18 TX / GPIO8 RX", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    lv_obj_t *port = ui_create_label(parent, "PORT1  GPIO18 TX / GPIO8 RX", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align_to(port, title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
 
-    s_link_diag_label = ui_create_label(
-        parent, "UART RX 0  TX 0  ERR 0\nFAULT 0x0000", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_link_diag_label = ui_create_label(parent, "UART RX 0  TX 0  ERR 0\nFAULT 0x0000", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_link_diag_label, LV_ALIGN_CENTER, 0, -5);
 
     s_baud_dropdown = lv_dropdown_create(parent);
-    lv_dropdown_set_options(s_baud_dropdown,
-                            "115200\n230400\n460800\n921600\n1000000\n"
-                            "1500000\n1843200\n2000000");
+    lv_dropdown_set_options(s_baud_dropdown, "115200\n230400\n460800\n921600\n1000000\n" "1500000\n1843200\n2000000");
     lv_dropdown_set_selected(s_baud_dropdown, 0U);
     lv_obj_set_size(s_baud_dropdown, 108, 36);
     lv_obj_set_pos(s_baud_dropdown, 7, 158);
-    lv_obj_set_style_bg_color(s_baud_dropdown,
-                              lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_baud_dropdown,
-                                lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
+    motor_ui_style_dropdown(s_baud_dropdown);
 
     s_reconnect_button = lv_button_create(parent);
     lv_obj_set_size(s_reconnect_button, 94, 36);
     lv_obj_set_pos(s_reconnect_button, 120, 158);
-    lv_obj_set_style_radius(s_reconnect_button, 10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_reconnect_button,
-                              lv_color_hex(UI_COLOR_BLUE), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_reconnect_button, ui_uart_reconnect_event,
-                        LV_EVENT_CLICKED, NULL);
-    lv_obj_t *button_label = ui_create_label(s_reconnect_button, "CONNECT",
-                                              UI_COLOR_TEXT, &lv_font_montserrat_12);
+    motor_ui_style_button(s_reconnect_button, UI_COLOR_BLUE, 10);
+    lv_obj_add_event_cb(s_reconnect_button, motor_ui_uart_reconnect_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *button_label = ui_create_label(s_reconnect_button, "CONNECT", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(button_label);
 
     s_uart_disconnect_button = lv_button_create(parent);
     lv_obj_set_size(s_uart_disconnect_button, 94, 36);
     lv_obj_set_pos(s_uart_disconnect_button, 219, 158);
-    lv_obj_set_style_radius(s_uart_disconnect_button, 10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_uart_disconnect_button,
-                              lv_color_hex(UI_COLOR_RED), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_uart_disconnect_button, ui_uart_disconnect_event,
-                        LV_EVENT_CLICKED, NULL);
-    button_label = ui_create_label(s_uart_disconnect_button, "DISCONNECT",
-                                   UI_COLOR_TEXT, &lv_font_montserrat_12);
+    motor_ui_style_button(s_uart_disconnect_button, UI_COLOR_RED, 10);
+    lv_obj_add_event_cb(s_uart_disconnect_button, motor_ui_uart_disconnect_event, LV_EVENT_CLICKED, NULL);
+    button_label = ui_create_label(s_uart_disconnect_button, "DISCONNECT", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(button_label);
 
-    s_home_state_label = ui_create_label(parent, "SELECT BAUD AND CONNECT",
-                                          UI_COLOR_MUTED, &lv_font_montserrat_12);
+    s_home_state_label = ui_create_label(parent, "SELECT BAUD AND CONNECT", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_home_state_label, LV_ALIGN_BOTTOM_MID, 0, -7);
 }
 
 /** @brief 创建 CAN 通道配置与诊断页面。 */
 static void ui_create_can_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "CAN COMMUNICATION", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_t *title = ui_create_label(parent, "CAN COMMUNICATION", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 12);
-    lv_obj_t *detail = ui_create_label(
-        parent, "J2/PORT1  GPIO5/6  CLASSIC CAN 500K", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    lv_obj_t *detail = ui_create_label(parent, "J2/PORT1  GPIO5/6  CLASSIC CAN 500K", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align_to(detail, title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
     s_stop_button = lv_button_create(parent);
     lv_obj_set_size(s_stop_button, 132, 36);
     lv_obj_set_pos(s_stop_button, 22, 116);
-    lv_obj_set_style_radius(s_stop_button, 10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_stop_button, lv_color_hex(UI_COLOR_RED), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_stop_button, ui_stop_event, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *stop = ui_create_label(s_stop_button, "STOP", UI_COLOR_TEXT,
-                                     &lv_font_montserrat_12);
+    motor_ui_style_button(s_stop_button, UI_COLOR_RED, 10);
+    lv_obj_add_event_cb(s_stop_button, motor_ui_stop_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *stop = ui_create_label(s_stop_button, "STOP", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(stop);
 
     s_ack_button = lv_button_create(parent);
     lv_obj_set_size(s_ack_button, 132, 36);
     lv_obj_set_pos(s_ack_button, 166, 116);
-    lv_obj_set_style_radius(s_ack_button, 10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_ack_button, lv_color_hex(UI_COLOR_BLUE), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_ack_button, ui_ack_fault_event, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *ack = ui_create_label(s_ack_button, "ACK FAULT", UI_COLOR_TEXT,
-                                    &lv_font_montserrat_12);
+    motor_ui_style_button(s_ack_button, UI_COLOR_BLUE, 10);
+    lv_obj_add_event_cb(s_ack_button, motor_ui_ack_fault_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ack = ui_create_label(s_ack_button, "ACK FAULT", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(ack);
 
     s_can_connect_button = lv_button_create(parent);
     lv_obj_set_size(s_can_connect_button, 132, 40);
     lv_obj_set_pos(s_can_connect_button, 22, 64);
-    lv_obj_set_style_radius(s_can_connect_button, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_can_connect_button,
-                              lv_color_hex(UI_COLOR_CYAN), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_can_connect_button, ui_can_connect_event,
-                        LV_EVENT_CLICKED, NULL);
-    lv_obj_t *button_label = ui_create_label(s_can_connect_button, "CONNECT",
-                                              UI_COLOR_TEXT, &lv_font_montserrat_14);
+    motor_ui_style_button(s_can_connect_button, UI_COLOR_CYAN, 12);
+    lv_obj_add_event_cb(s_can_connect_button, motor_ui_can_connect_event, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *button_label = ui_create_label(s_can_connect_button, "CONNECT", UI_COLOR_TEXT, &lv_font_montserrat_14);
     lv_obj_center(button_label);
 
     s_can_disconnect_button = lv_button_create(parent);
     lv_obj_set_size(s_can_disconnect_button, 132, 40);
     lv_obj_set_pos(s_can_disconnect_button, 166, 64);
-    lv_obj_set_style_radius(s_can_disconnect_button, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_can_disconnect_button,
-                              lv_color_hex(UI_COLOR_RED), LV_PART_MAIN);
-    lv_obj_add_event_cb(s_can_disconnect_button, ui_can_disconnect_event,
-                        LV_EVENT_CLICKED, NULL);
-    button_label = ui_create_label(s_can_disconnect_button, "DISCONNECT",
-                                   UI_COLOR_TEXT, &lv_font_montserrat_14);
+    motor_ui_style_button(s_can_disconnect_button, UI_COLOR_RED, 12);
+    lv_obj_add_event_cb(s_can_disconnect_button, motor_ui_can_disconnect_event, LV_EVENT_CLICKED, NULL);
+    button_label = ui_create_label(s_can_disconnect_button, "DISCONNECT", UI_COLOR_TEXT, &lv_font_montserrat_14);
     lv_obj_center(button_label);
 
-    s_can_state_label = ui_create_label(
-        parent, "Connecting selects CAN as the active control transport.",
-        UI_COLOR_MUTED, &lv_font_montserrat_12);
+    s_can_state_label = ui_create_label(parent, "Connecting selects CAN as the active control transport.", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_can_state_label, LV_ALIGN_BOTTOM_MID, 0, -24);
 }
 
+/**
+ * @brief 创建 Wi-Fi/MQTT 页面共用的操作按钮。
+ * @param parent 按钮的父页面。
+ * @param text 按钮显示文本。
+ * @param color 按钮背景的主题颜色角色。
+ * @param x 按钮左上角横坐标。
+ * @param y 按钮左上角纵坐标。
+ * @param callback 点击按钮时调用的事件回调。
+ * @return 新创建的操作按钮对象。
+ */
 static lv_obj_t *ui_create_wifi_action_button(
     lv_obj_t *parent,
     const char *text,
-    uint32_t color,
+    motor_ui_style_color_t color,
     int32_t x,
     int32_t y,
     lv_event_cb_t callback)
@@ -1123,12 +570,9 @@ static lv_obj_t *ui_create_wifi_action_button(
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_set_size(button, 92, 34);
     lv_obj_set_pos(button, x, y);
-    lv_obj_set_style_radius(button, 10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        button, lv_color_hex(color), LV_PART_MAIN);
+    motor_ui_style_button(button, color, 10);
     lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *label = ui_create_label(
-        button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
+    lv_obj_t *label = ui_create_label(button, text, UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_center(label);
     return button;
 }
@@ -1136,30 +580,17 @@ static lv_obj_t *ui_create_wifi_action_button(
 /** @brief 创建 Wi-Fi 扫描、网络选择及密码输入页面。 */
 static void ui_create_wifi_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "WI-FI NETWORK", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_t *title = ui_create_label(parent, "WI-FI NETWORK", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_set_pos(title, 8, 4);
 
     s_wifi_network_dropdown = lv_dropdown_create(parent);
     lv_dropdown_set_options(s_wifi_network_dropdown, "No networks - tap SCAN");
     lv_obj_set_size(s_wifi_network_dropdown, 210, 34);
     lv_obj_set_pos(s_wifi_network_dropdown, 8, 34);
-    lv_obj_set_style_bg_color(
-        s_wifi_network_dropdown,
-        lv_color_hex(UI_COLOR_PANEL_LIGHT),
-        LV_PART_MAIN);
-    lv_obj_set_style_text_color(
-        s_wifi_network_dropdown,
-        lv_color_hex(UI_COLOR_TEXT),
-        LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        s_wifi_network_dropdown,
-        ui_wifi_network_event,
-        LV_EVENT_VALUE_CHANGED,
-        NULL);
+    motor_ui_style_dropdown(s_wifi_network_dropdown);
+    lv_obj_add_event_cb(s_wifi_network_dropdown, motor_ui_wifi_network_event, LV_EVENT_VALUE_CHANGED, NULL);
 
-    ui_create_wifi_action_button(
-        parent, "SCAN", UI_COLOR_CYAN, 220, 34, ui_wifi_scan_event);
+    ui_create_wifi_action_button(parent, "SCAN", UI_COLOR_CYAN, 220, 34, motor_ui_wifi_scan_event);
 
     s_wifi_password_textarea = lv_textarea_create(parent);
     lv_obj_set_size(s_wifi_password_textarea, 204, 34);
@@ -1168,44 +599,19 @@ static void ui_create_wifi_page(lv_obj_t *parent)
     lv_textarea_set_password_mode(s_wifi_password_textarea, false);
     lv_textarea_set_max_length(s_wifi_password_textarea, 63U);
     lv_textarea_set_text(s_wifi_password_textarea, "13579035076");
-    lv_textarea_set_placeholder_text(
-        s_wifi_password_textarea,
-        "Wi-Fi password");
-    lv_obj_set_style_bg_color(
-        s_wifi_password_textarea,
-        lv_color_hex(UI_COLOR_PANEL),
-        LV_PART_MAIN);
-    lv_obj_set_style_text_color(
-        s_wifi_password_textarea,
-        lv_color_hex(UI_COLOR_TEXT),
-        LV_PART_MAIN);
-    lv_obj_set_style_border_color(
-        s_wifi_password_textarea,
-        lv_color_hex(UI_COLOR_PANEL_LIGHT),
-        LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        s_wifi_password_textarea,
-        ui_wifi_password_event,
-        LV_EVENT_CLICKED,
-        NULL);
+    lv_textarea_set_placeholder_text(s_wifi_password_textarea, "Wi-Fi password");
+    motor_ui_style_textarea(s_wifi_password_textarea);
+    lv_obj_add_event_cb(s_wifi_password_textarea, motor_ui_wifi_password_event, LV_EVENT_CLICKED, NULL);
 
-    ui_create_wifi_action_button(
-        parent, "CONNECT", UI_COLOR_BLUE, 220, 76,
-        ui_wifi_connect_event);
-    ui_create_wifi_action_button(
-        parent, "DISCONNECT", UI_COLOR_RED, 220, 118,
-        ui_wifi_disconnect_event);
+    ui_create_wifi_action_button(parent, "CONNECT", UI_COLOR_BLUE, 220, 76, motor_ui_wifi_connect_event);
+    ui_create_wifi_action_button(parent, "DISCONNECT", UI_COLOR_RED, 220, 118, motor_ui_wifi_disconnect_event);
 
-    s_wifi_detail_label = ui_create_label(
-        parent, "No network selected", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_wifi_detail_label = ui_create_label(parent, "No network selected", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(s_wifi_detail_label, 10, 120);
     lv_obj_set_width(s_wifi_detail_label, 202);
     lv_label_set_long_mode(s_wifi_detail_label, LV_LABEL_LONG_DOT);
 
-    s_wifi_page_state_label = ui_create_label(
-        parent, "Initializing Wi-Fi", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_wifi_page_state_label = ui_create_label(parent, "Initializing Wi-Fi", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(s_wifi_page_state_label, 10, 165);
     lv_obj_set_width(s_wifi_page_state_label, 300);
     lv_label_set_long_mode(s_wifi_page_state_label, LV_LABEL_LONG_WRAP);
@@ -1214,96 +620,50 @@ static void ui_create_wifi_page(lv_obj_t *parent)
     lv_obj_set_size(s_wifi_keyboard, 320, 160);
     lv_obj_align(s_wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_mode(s_wifi_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_style_bg_color(
-        s_wifi_keyboard, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        s_wifi_keyboard,
-        ui_wifi_keyboard_event,
-        LV_EVENT_ALL,
-        NULL);
+    motor_ui_style_keyboard(s_wifi_keyboard);
+    lv_obj_add_event_cb(s_wifi_keyboard, motor_ui_wifi_keyboard_event, LV_EVENT_ALL, NULL);
     lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
 /** @brief 创建 MQTT Broker 配置与测试发布页面。 */
 static void ui_create_mqtt_page(lv_obj_t *parent)
 {
-    lv_obj_t *title = ui_create_label(
-        parent, "MQTT TEST", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    lv_obj_t *title = ui_create_label(parent, "MQTT TEST", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_set_pos(title, 8, 4);
 
     s_mqtt_uri_textarea = lv_textarea_create(parent);
     lv_obj_set_size(s_mqtt_uri_textarea, 204, 34);
     lv_obj_set_pos(s_mqtt_uri_textarea, 8, 34);
     lv_textarea_set_one_line(s_mqtt_uri_textarea, true);
-    lv_textarea_set_max_length(
-        s_mqtt_uri_textarea,
-        MQTT_MANAGER_URI_MAX_LEN);
-    lv_textarea_set_text(
-        s_mqtt_uri_textarea,
-        "mqtt://192.168.10.4:1883");
-    lv_obj_set_style_bg_color(
-        s_mqtt_uri_textarea,
-        lv_color_hex(UI_COLOR_PANEL),
-        LV_PART_MAIN);
-    lv_obj_set_style_text_color(
-        s_mqtt_uri_textarea,
-        lv_color_hex(UI_COLOR_TEXT),
-        LV_PART_MAIN);
-    lv_obj_set_style_border_color(
-        s_mqtt_uri_textarea,
-        lv_color_hex(UI_COLOR_PANEL_LIGHT),
-        LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        s_mqtt_uri_textarea,
-        ui_mqtt_uri_event,
-        LV_EVENT_CLICKED,
-        NULL);
+    lv_textarea_set_max_length(s_mqtt_uri_textarea, MQTT_MANAGER_URI_MAX_LEN);
+    lv_textarea_set_text(s_mqtt_uri_textarea, "mqtt://192.168.10.4:1883");
+    motor_ui_style_textarea(s_mqtt_uri_textarea);
+    lv_obj_add_event_cb(s_mqtt_uri_textarea, motor_ui_mqtt_uri_event, LV_EVENT_CLICKED, NULL);
 
-    ui_create_wifi_action_button(
-        parent, "CONNECT", UI_COLOR_BLUE, 220, 34,
-        ui_mqtt_connect_event);
+    ui_create_wifi_action_button(parent, "CONNECT", UI_COLOR_BLUE, 220, 34, motor_ui_mqtt_connect_event);
 
-    s_mqtt_page_state_label = ui_create_label(
-        parent, "Connect Wi-Fi, then connect MQTT", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_mqtt_page_state_label = ui_create_label(parent, "Connect Wi-Fi, then connect MQTT", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(s_mqtt_page_state_label, 10, 75);
     lv_obj_set_width(s_mqtt_page_state_label, 300);
     lv_label_set_long_mode(s_mqtt_page_state_label, LV_LABEL_LONG_DOT);
 
-    ui_create_wifi_action_button(
-        parent, "PING", UI_COLOR_CYAN, 8, 104,
-        ui_mqtt_ping_event);
-    ui_create_wifi_action_button(
-        parent, "WI-FI INFO", UI_COLOR_CYAN, 114, 104,
-        ui_mqtt_wifi_event);
-    ui_create_wifi_action_button(
-        parent, "MOTOR", UI_COLOR_CYAN, 220, 104,
-        ui_mqtt_motor_event);
+    ui_create_wifi_action_button(parent, "PING", UI_COLOR_CYAN, 8, 104, motor_ui_mqtt_ping_event);
+    ui_create_wifi_action_button(parent, "WI-FI INFO", UI_COLOR_CYAN, 114, 104, motor_ui_mqtt_wifi_event);
+    ui_create_wifi_action_button(parent, "MOTOR", UI_COLOR_CYAN, 220, 104, motor_ui_mqtt_motor_event);
 
-    s_mqtt_rx_label = ui_create_label(
-        parent,
-        "RX motor/hmi/test/rx\nNo message from MQTTX",
-        UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_mqtt_rx_label = ui_create_label(parent, "RX motor/hmi/test/rx\nNo message from MQTTX", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_pos(s_mqtt_rx_label, 10, 149);
     lv_obj_set_size(s_mqtt_rx_label, 202, 48);
     lv_label_set_long_mode(s_mqtt_rx_label, LV_LABEL_LONG_DOT);
 
-    ui_create_wifi_action_button(
-        parent, "DISCONNECT", UI_COLOR_RED, 220, 153,
-        ui_mqtt_disconnect_event);
+    ui_create_wifi_action_button(parent, "DISCONNECT", UI_COLOR_RED, 220, 153, motor_ui_mqtt_disconnect_event);
 
     s_mqtt_keyboard = lv_keyboard_create(lv_screen_active());
     lv_obj_set_size(s_mqtt_keyboard, 320, 160);
     lv_obj_align(s_mqtt_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_mode(s_mqtt_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_style_bg_color(
-        s_mqtt_keyboard, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
-    lv_obj_add_event_cb(
-        s_mqtt_keyboard,
-        ui_mqtt_keyboard_event,
-        LV_EVENT_ALL,
-        NULL);
+    motor_ui_style_keyboard(s_mqtt_keyboard);
+    lv_obj_add_event_cb(s_mqtt_keyboard, motor_ui_mqtt_keyboard_event, LV_EVENT_ALL, NULL);
     lv_obj_add_flag(s_mqtt_keyboard, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -1313,59 +673,40 @@ static void ui_create_speed_page(lv_obj_t *parent)
     lv_obj_t *actual_card = lv_obj_create(parent);
     lv_obj_set_size(actual_card, 144, 68);
     lv_obj_align(actual_card, LV_ALIGN_TOP_LEFT, 8, 10);
-    ui_style_panel(actual_card, 14);
+    motor_ui_style_panel(actual_card, 14, 10);
 
-    lv_obj_t *actual_title = ui_create_label(
-        actual_card, "ACTUAL SPEED", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_t *actual_title = ui_create_label(actual_card, "ACTUAL SPEED", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(actual_title, LV_ALIGN_TOP_LEFT, 0, 0);
-    s_speed_actual_label = ui_create_label(
-        actual_card, "0 RPM", UI_COLOR_CYAN, &lv_font_montserrat_20);
+    s_speed_actual_label = ui_create_label(actual_card, "0 RPM", UI_COLOR_CYAN, &lv_font_montserrat_20);
     lv_obj_align(s_speed_actual_label, LV_ALIGN_BOTTOM_LEFT, 0, -3);
 
     lv_obj_t *reference_card = lv_obj_create(parent);
     lv_obj_set_size(reference_card, 144, 68);
     lv_obj_align(reference_card, LV_ALIGN_TOP_RIGHT, -8, 10);
-    ui_style_panel(reference_card, 14);
+    motor_ui_style_panel(reference_card, 14, 10);
 
-    lv_obj_t *reference_title = ui_create_label(
-        reference_card, "REFERENCE", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_t *reference_title = ui_create_label(reference_card, "REFERENCE", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(reference_title, LV_ALIGN_TOP_LEFT, 0, 0);
-    s_speed_reference_label = ui_create_label(
-        reference_card, "0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_20);
+    s_speed_reference_label = ui_create_label(reference_card, "0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_align(s_speed_reference_label, LV_ALIGN_BOTTOM_LEFT, 0, -3);
 
-    s_speed_mode_button = ui_create_mode_button(
-        parent, "ENABLE SPEED", ui_speed_mode_event,
-        &s_speed_mode_button_label);
+    s_speed_mode_button = ui_create_mode_button(parent, "ENABLE SPEED", motor_ui_speed_mode_event, &s_speed_mode_button_label);
     lv_obj_align(s_speed_mode_button, LV_ALIGN_CENTER, -66, 3);
 
     s_speed_stop_button =
         ui_create_stop_button(parent, 116, 40);
-    lv_obj_align(
-        s_speed_stop_button, LV_ALIGN_CENTER, 66, 3);
+    lv_obj_align(s_speed_stop_button, LV_ALIGN_CENTER, 66, 3);
 
-    s_speed_slider_value = ui_create_label(
-        parent, "0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
+    s_speed_slider_value = ui_create_label(parent, "0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_align(s_speed_slider_value, LV_ALIGN_BOTTOM_MID, 0, -40);
 
     s_speed_slider = lv_slider_create(parent);
     lv_obj_set_size(s_speed_slider, 284, 16);
     lv_obj_align(s_speed_slider, LV_ALIGN_BOTTOM_MID, 0, -14);
-    lv_slider_set_range(
-        s_speed_slider, -UI_SPEED_LIMIT_RPM, UI_SPEED_LIMIT_RPM);
+    lv_slider_set_range(s_speed_slider, -UI_SPEED_LIMIT_RPM, UI_SPEED_LIMIT_RPM);
     lv_slider_set_value(s_speed_slider, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(
-        s_speed_slider, lv_color_hex(UI_COLOR_PANEL_LIGHT),
-        LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        s_speed_slider, lv_color_hex(UI_COLOR_BLUE),
-        LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(
-        s_speed_slider, lv_color_hex(UI_COLOR_TEXT),
-        LV_PART_KNOB);
-    lv_obj_set_style_pad_all(s_speed_slider, 8, LV_PART_KNOB);
-    lv_obj_add_event_cb(
-        s_speed_slider, ui_speed_slider_event, LV_EVENT_ALL, NULL);
+    motor_ui_style_slider(s_speed_slider);
+    lv_obj_add_event_cb(s_speed_slider, motor_ui_speed_slider_event, LV_EVENT_ALL, NULL);
 }
 
 /** @brief 创建位置模式控制、滑块及目标角度标签。 */
@@ -1374,44 +715,29 @@ static void ui_create_position_page(lv_obj_t *parent)
     lv_obj_t *current_card = lv_obj_create(parent);
     lv_obj_set_size(current_card, 144, 64);
     lv_obj_align(current_card, LV_ALIGN_TOP_LEFT, 8, 8);
-    ui_style_panel(current_card, 14);
-    lv_obj_t *current_title = ui_create_label(
-        current_card, "CURRENT POSITION", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    motor_ui_style_panel(current_card, 14, 10);
+    lv_obj_t *current_title = ui_create_label(current_card, "CURRENT POSITION", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(current_title, LV_ALIGN_TOP_LEFT, 0, 0);
-    s_position_current_label = ui_create_label(
-        current_card, "0.00 deg", UI_COLOR_CYAN,
-        &lv_font_montserrat_20);
+    s_position_current_label = ui_create_label(current_card, "0.00 deg", UI_COLOR_CYAN, &lv_font_montserrat_20);
     lv_obj_align(s_position_current_label, LV_ALIGN_BOTTOM_LEFT, 0, -2);
 
     lv_obj_t *target_card = lv_obj_create(parent);
     lv_obj_set_size(target_card, 144, 64);
     lv_obj_align(target_card, LV_ALIGN_TOP_RIGHT, -8, 8);
-    ui_style_panel(target_card, 14);
-    lv_obj_t *target_title = ui_create_label(
-        target_card, "TARGET POSITION", UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    motor_ui_style_panel(target_card, 14, 10);
+    lv_obj_t *target_title = ui_create_label(target_card, "TARGET POSITION", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(target_title, LV_ALIGN_TOP_LEFT, 0, 0);
-    s_position_target_label = ui_create_label(
-        target_card, "0.00 deg", UI_COLOR_TEXT,
-        &lv_font_montserrat_20);
+    s_position_target_label = ui_create_label(target_card, "0.00 deg", UI_COLOR_TEXT, &lv_font_montserrat_20);
     lv_obj_align(s_position_target_label, LV_ALIGN_BOTTOM_LEFT, 0, -2);
 
-    s_position_mode_button = ui_create_mode_button(
-        parent, "ENABLE POS", ui_position_mode_event,
-        &s_position_mode_button_label);
+    s_position_mode_button = ui_create_mode_button(parent, "ENABLE POS", motor_ui_position_mode_event, &s_position_mode_button_label);
     lv_obj_align(s_position_mode_button, LV_ALIGN_CENTER, -66, -2);
 
     s_position_stop_button =
         ui_create_stop_button(parent, 116, 40);
-    lv_obj_align(
-        s_position_stop_button, LV_ALIGN_CENTER, 66, -2);
+    lv_obj_align(s_position_stop_button, LV_ALIGN_CENTER, 66, -2);
 
-    s_electrical_label = ui_create_label(
-        parent,
-        "Iq 0mA  Id 0mA\nIq* 0mA  Id* 0mA",
-        UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    s_electrical_label = ui_create_label(parent, "Iq 0mA  Id 0mA\nIq* 0mA  Id* 0mA", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_electrical_label, LV_ALIGN_BOTTOM_LEFT, 12, -48);
 
     s_position_slider = lv_slider_create(parent);
@@ -1419,31 +745,14 @@ static void ui_create_position_page(lv_obj_t *parent)
     lv_obj_align(s_position_slider, LV_ALIGN_BOTTOM_MID, 0, -12);
     lv_slider_set_range(s_position_slider, 0, 36000);
     lv_slider_set_value(s_position_slider, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(
-        s_position_slider, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        s_position_slider, lv_color_hex(UI_COLOR_BLUE), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(
-        s_position_slider, lv_color_hex(UI_COLOR_TEXT), LV_PART_KNOB);
-    lv_obj_set_style_pad_all(s_position_slider, 8, LV_PART_KNOB);
-    lv_obj_add_event_cb(
-        s_position_slider, ui_position_slider_event, LV_EVENT_ALL, NULL);
+    motor_ui_style_slider(s_position_slider);
+    lv_obj_add_event_cb(s_position_slider, motor_ui_position_slider_event, LV_EVENT_ALL, NULL);
 }
 
 /** @brief 为图表对象应用统一深色主题样式和网格设置。 */
-static void ui_style_chart(lv_obj_t *chart)
+static void ui_configure_chart(lv_obj_t *chart)
 {
-    lv_obj_set_style_bg_color(
-        chart, lv_color_hex(UI_COLOR_PANEL), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(chart, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(
-        chart, lv_color_hex(UI_COLOR_MUTED), LV_PART_MAIN);
-    lv_obj_set_style_border_width(chart, 1, LV_PART_MAIN);
-    lv_obj_set_style_line_color(
-        chart, lv_color_hex(UI_COLOR_PANEL_LIGHT), LV_PART_MAIN);
-    lv_obj_set_style_line_width(chart, 1, LV_PART_MAIN);
-    lv_obj_set_style_line_width(chart, 2, LV_PART_ITEMS);
-    lv_obj_set_style_size(chart, 0, 0, LV_PART_INDICATOR);
+    motor_ui_style_chart(chart);
     lv_obj_add_flag(chart, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(chart, UI_CHART_POINTS);
@@ -1453,10 +762,10 @@ static void ui_style_chart(lv_obj_t *chart)
 
 /**
  * @brief 在图表旁创建固定的顶部/中部/底部刻度标签。
- * @param parent Page owning the label objects.
- * @param top_text Text for the upper scale marker.
- * @param middle_text Text for the centre scale marker.
- * @param bottom_text Text for the lower scale marker.
+ * @param parent 刻度标签所属的页面对象。
+ * @param[out] top 接收顶部刻度标签对象。
+ * @param[out] mid 接收中部刻度标签对象。
+ * @param[out] bottom 接收底部刻度标签对象。
  */
 static void ui_create_chart_axis_labels(
     lv_obj_t *parent,
@@ -1464,135 +773,78 @@ static void ui_create_chart_axis_labels(
     lv_obj_t **mid,
     lv_obj_t **bottom)
 {
-    *top = ui_create_label(
-        parent, "2600", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    *top = ui_create_label(parent, "2600", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_width(*top, 42);
-    lv_obj_set_style_text_align(*top, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    motor_ui_style_chart_axis_label(*top);
     lv_obj_set_pos(*top, 0, 20);
 
-    *mid = ui_create_label(
-        parent, "1300", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    *mid = ui_create_label(parent, "1300", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_width(*mid, 42);
-    lv_obj_set_style_text_align(*mid, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    motor_ui_style_chart_axis_label(*mid);
     lv_obj_set_pos(*mid, 0, 99);
 
-    *bottom = ui_create_label(
-        parent, "0", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    *bottom = ui_create_label(parent, "0", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_set_width(*bottom, 42);
-    lv_obj_set_style_text_align(
-        *bottom, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    motor_ui_style_chart_axis_label(*bottom);
     lv_obj_set_pos(*bottom, 0, 178);
 }
 
 /** @brief 创建绘制实际电机转速随时间变化曲线的页面。 */
 static void ui_create_speed_chart_page(lv_obj_t *parent)
 {
-    s_speed_chart_value_label = ui_create_label(
-        parent,
-        "REF 0 RPM   SPEED 0 RPM",
-        UI_COLOR_TEXT,
-        &lv_font_montserrat_12);
+    s_speed_chart_value_label = ui_create_label(parent, "REF 0 RPM   SPEED 0 RPM", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_align(s_speed_chart_value_label, LV_ALIGN_TOP_RIGHT, -8, 0);
 
-    ui_create_chart_axis_labels(
-        parent,
-        &s_speed_chart_top_label,
-        &s_speed_chart_mid_label,
-        &s_speed_chart_bottom_label);
+    ui_create_chart_axis_labels(parent, &s_speed_chart_top_label, &s_speed_chart_mid_label, &s_speed_chart_bottom_label);
 
     s_speed_chart = lv_chart_create(parent);
     lv_obj_set_size(s_speed_chart, 270, 164);
     lv_obj_set_pos(s_speed_chart, 44, 20);
-    ui_style_chart(s_speed_chart);
-    lv_chart_set_axis_range(
-        s_speed_chart, LV_CHART_AXIS_PRIMARY_Y, 0, UI_SPEED_LIMIT_RPM);
+    ui_configure_chart(s_speed_chart);
+    lv_chart_set_axis_range(s_speed_chart, LV_CHART_AXIS_PRIMARY_Y, 0, UI_SPEED_LIMIT_RPM);
 
-    s_speed_measured_series = lv_chart_add_series(
-        s_speed_chart,
-        lv_color_hex(UI_COLOR_TEXT),
-        LV_CHART_AXIS_PRIMARY_Y);
-    s_speed_reference_series = lv_chart_add_series(
-        s_speed_chart,
-        lv_color_hex(UI_COLOR_RED),
-        LV_CHART_AXIS_PRIMARY_Y);
-    lv_chart_set_all_values(
-        s_speed_chart, s_speed_measured_series, 0);
-    lv_chart_set_all_values(
-        s_speed_chart, s_speed_reference_series, 0);
+    s_speed_measured_series = lv_chart_add_series(s_speed_chart, motor_ui_style_color(UI_COLOR_TEXT), LV_CHART_AXIS_PRIMARY_Y);
+    s_speed_reference_series = lv_chart_add_series(s_speed_chart, motor_ui_style_color(UI_COLOR_RED), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_all_values(s_speed_chart, s_speed_measured_series, 0);
+    lv_chart_set_all_values(s_speed_chart, s_speed_reference_series, 0);
 
-    lv_obj_t *time_label = ui_create_label(
-        parent, "TIME 2 s", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_t *time_label = ui_create_label(parent, "TIME 2 s", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
-    lv_obj_t *keys_label = ui_create_label(
-        parent,
-        "SWIPE UP +100 / DOWN -100 RPM",
-        UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    lv_obj_t *keys_label = ui_create_label(parent, "SWIPE UP +100 / DOWN -100 RPM", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(keys_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 }
 
 /** @brief 创建绘制 d/q 轴电流遥测曲线的页面。 */
 static void ui_create_current_chart_page(lv_obj_t *parent)
 {
-    s_current_chart_value_label = ui_create_label(
-        parent,
-        "REF 0 mA   Iq 0 mA",
-        UI_COLOR_TEXT,
-        &lv_font_montserrat_12);
+    s_current_chart_value_label = ui_create_label(parent, "REF 0 mA   Iq 0 mA", UI_COLOR_TEXT, &lv_font_montserrat_12);
     lv_obj_align(s_current_chart_value_label, LV_ALIGN_TOP_RIGHT, -8, 0);
 
-    ui_create_chart_axis_labels(
-        parent,
-        &s_current_chart_top_label,
-        &s_current_chart_mid_label,
-        &s_current_chart_bottom_label);
-    lv_label_set_text_fmt(
-        s_current_chart_top_label,
-        "%ld",
-        (long)s_current_chart_scale_ma);
+    ui_create_chart_axis_labels(parent, &s_current_chart_top_label, &s_current_chart_mid_label, &s_current_chart_bottom_label);
+    lv_label_set_text_fmt(s_current_chart_top_label, "%ld", (long)s_current_chart_scale_ma);
     lv_label_set_text(s_current_chart_mid_label, "0");
-    lv_label_set_text_fmt(
-        s_current_chart_bottom_label,
-        "-%ld",
-        (long)s_current_chart_scale_ma);
+    lv_label_set_text_fmt(s_current_chart_bottom_label, "-%ld", (long)s_current_chart_scale_ma);
 
     s_current_chart = lv_chart_create(parent);
     lv_obj_set_size(s_current_chart, 270, 164);
     lv_obj_set_pos(s_current_chart, 44, 20);
-    ui_style_chart(s_current_chart);
-    lv_chart_set_axis_range(
-        s_current_chart,
-        LV_CHART_AXIS_PRIMARY_Y,
-        -s_current_chart_scale_ma,
-        s_current_chart_scale_ma);
+    ui_configure_chart(s_current_chart);
+    lv_chart_set_axis_range(s_current_chart, LV_CHART_AXIS_PRIMARY_Y, -s_current_chart_scale_ma, s_current_chart_scale_ma);
 
-    s_current_measured_series = lv_chart_add_series(
-        s_current_chart,
-        lv_color_hex(UI_COLOR_TEXT),
-        LV_CHART_AXIS_PRIMARY_Y);
-    s_current_reference_series = lv_chart_add_series(
-        s_current_chart,
-        lv_color_hex(UI_COLOR_RED),
-        LV_CHART_AXIS_PRIMARY_Y);
-    lv_chart_set_all_values(
-        s_current_chart, s_current_measured_series, 0);
-    lv_chart_set_all_values(
-        s_current_chart, s_current_reference_series, 0);
+    s_current_measured_series = lv_chart_add_series(s_current_chart, motor_ui_style_color(UI_COLOR_TEXT), LV_CHART_AXIS_PRIMARY_Y);
+    s_current_reference_series = lv_chart_add_series(s_current_chart, motor_ui_style_color(UI_COLOR_RED), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_all_values(s_current_chart, s_current_measured_series, 0);
+    lv_chart_set_all_values(s_current_chart, s_current_reference_series, 0);
 
-    lv_obj_t *time_label = ui_create_label(
-        parent, "TIME 2 s", UI_COLOR_MUTED, &lv_font_montserrat_12);
+    lv_obj_t *time_label = ui_create_label(parent, "TIME 2 s", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -8, -6);
-    lv_obj_t *display_label = ui_create_label(
-        parent,
-        "DISPLAY ONLY",
-        UI_COLOR_MUTED,
-        &lv_font_montserrat_12);
+    lv_obj_t *display_label = ui_create_label(parent, "DISPLAY ONLY", UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(display_label, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 }
 
 /**
  * @brief 选择足以容纳最新电流数据的对称图表量程。
- * @return Positive full-scale current in milliamperes.
+ * @return 图表正向满量程电流，单位为 mA。
  */
 static int32_t ui_select_current_scale(
     int32_t measured,
@@ -1623,7 +875,7 @@ static int32_t ui_select_current_scale(
 
 /**
  * @brief 以受限刷新频率将最新遥测值写入速度/电流图表。
- * @param snapshot Unified motor telemetry sampled by the UI timer.
+ * @param snapshot UI 定时器采样得到的统一电机遥测快照。
  */
 static void ui_update_charts(const motor_link_snapshot_t *snapshot)
 {
@@ -1643,14 +895,10 @@ static void ui_update_charts(const motor_link_snapshot_t *snapshot)
     if (reverse != s_speed_chart_reverse) {
         s_speed_chart_reverse = reverse;
         s_speed_chart_reference_display = INT16_MIN;
-        lv_chart_set_all_values(
-            s_speed_chart, s_speed_measured_series, 0);
-        lv_label_set_text(
-            s_speed_chart_top_label, reverse ? "0" : "2600");
-        lv_label_set_text(
-            s_speed_chart_mid_label, reverse ? "-1300" : "1300");
-        lv_label_set_text(
-            s_speed_chart_bottom_label, reverse ? "-2600" : "0");
+        lv_chart_set_all_values(s_speed_chart, s_speed_measured_series, 0);
+        lv_label_set_text(s_speed_chart_top_label, reverse ? "0" : "2600");
+        lv_label_set_text(s_speed_chart_mid_label, reverse ? "-1300" : "1300");
+        lv_label_set_text(s_speed_chart_bottom_label, reverse ? "-2600" : "0");
     }
 
     int32_t speed_value = reverse
@@ -1671,52 +919,28 @@ static void ui_update_charts(const motor_link_snapshot_t *snapshot)
     if (speed_reference > UI_SPEED_LIMIT_RPM) {
         speed_reference = UI_SPEED_LIMIT_RPM;
     }
-    lv_chart_set_next_value(
-        s_speed_chart, s_speed_measured_series, speed_value);
+    lv_chart_set_next_value(s_speed_chart, s_speed_measured_series, speed_value);
     if (speed_reference != s_speed_chart_reference_display) {
         s_speed_chart_reference_display = (int16_t)speed_reference;
-        lv_chart_set_all_values(
-            s_speed_chart, s_speed_reference_series, speed_reference);
+        lv_chart_set_all_values(s_speed_chart, s_speed_reference_series, speed_reference);
     }
-    lv_label_set_text_fmt(
-        s_speed_chart_value_label,
-        "REF %d RPM   SPEED %d RPM",
-        snapshot->reference_speed_rpm,
-        snapshot->measured_speed_rpm);
+    lv_label_set_text_fmt(s_speed_chart_value_label, "REF %d RPM   SPEED %d RPM", snapshot->reference_speed_rpm, snapshot->measured_speed_rpm);
 
-    const int32_t new_scale = ui_select_current_scale(
-        snapshot->iq_ma, snapshot->iq_reference_ma);
+    const int32_t new_scale = ui_select_current_scale(snapshot->iq_ma, snapshot->iq_reference_ma);
     if (new_scale != s_current_chart_scale_ma) {
         s_current_chart_scale_ma = new_scale;
-        lv_chart_set_axis_range(
-            s_current_chart,
-            LV_CHART_AXIS_PRIMARY_Y,
-            -new_scale,
-            new_scale);
-        lv_label_set_text_fmt(
-            s_current_chart_top_label, "%ld", (long)new_scale);
-        lv_label_set_text(
-            s_current_chart_mid_label, "0");
-        lv_label_set_text_fmt(
-            s_current_chart_bottom_label, "-%ld", (long)new_scale);
+        lv_chart_set_axis_range(s_current_chart, LV_CHART_AXIS_PRIMARY_Y, -new_scale, new_scale);
+        lv_label_set_text_fmt(s_current_chart_top_label, "%ld", (long)new_scale);
+        lv_label_set_text(s_current_chart_mid_label, "0");
+        lv_label_set_text_fmt(s_current_chart_bottom_label, "-%ld", (long)new_scale);
     }
-    lv_chart_set_next_value(
-        s_current_chart,
-        s_current_measured_series,
-        snapshot->iq_ma);
+    lv_chart_set_next_value(s_current_chart, s_current_measured_series, snapshot->iq_ma);
     if (snapshot->iq_reference_ma !=
         s_current_chart_reference_ma) {
         s_current_chart_reference_ma = snapshot->iq_reference_ma;
-        lv_chart_set_all_values(
-            s_current_chart,
-            s_current_reference_series,
-            snapshot->iq_reference_ma);
+        lv_chart_set_all_values(s_current_chart, s_current_reference_series, snapshot->iq_reference_ma);
     }
-    lv_label_set_text_fmt(
-        s_current_chart_value_label,
-        "REF %d mA   Iq %d mA",
-        snapshot->iq_reference_ma,
-        snapshot->iq_ma);
+    lv_label_set_text_fmt(s_current_chart_value_label, "REF %d mA   Iq %d mA", snapshot->iq_reference_ma, snapshot->iq_ma);
 }
 
 /**
@@ -1746,27 +970,20 @@ static void ui_handle_keys(void)
     s_key_stable = s_key_candidate;
 
     if ((pressed & BOARD_KEY_K0) != 0U) {
-        /* K0 is an unconditional escape to the scrollable page selector. */
+        /* K0 始终用于直接返回可滚动的页面选择器。 */
         ui_show_page(UI_PAGE_HOME);
     } else if ((pressed & BOARD_KEY_K1) != 0U) {
-        ui_animate_to_page(
-            (ui_page_t)(
-                (s_current_page + UI_PAGE_COUNT - 1U) %
-                UI_PAGE_COUNT),
-            false);
+        ui_animate_to_page((ui_page_t)( (s_current_page + UI_PAGE_COUNT - 1U) % UI_PAGE_COUNT), false);
     } else if ((pressed & BOARD_KEY_K2) != 0U) {
-        ui_animate_to_page(
-            (ui_page_t)((s_current_page + 1U) % UI_PAGE_COUNT),
-            true);
+        ui_animate_to_page((ui_page_t)((s_current_page + 1U) % UI_PAGE_COUNT), true);
     }
 }
 
 /**
  * @brief 轮询 motor_link、刷新电机控件，并重发尚未确认的目标值。
  *
- * UI-owned pending commands are retried only when telemetry has not yet echoed
- * the requested state. The function never waits for I/O and therefore remains
- * safe in the LVGL periodic timer.
+ * 仅当遥测尚未回显请求状态时，才重试由 UI 管理的待处理命令。本函数不会等待
+ * I/O，因此可安全地在 LVGL 周期定时器中运行。
  */
 static void ui_update_motor_data(void)
 {
@@ -1811,47 +1028,16 @@ static void ui_update_motor_data(void)
         snapshot.transceiver_fault != s_previous_snapshot.transceiver_fault ||
         snapshot.motor_running != s_previous_snapshot.motor_running ||
         snapshot.motor_fault != s_previous_snapshot.motor_fault) {
-        lv_obj_set_style_text_color(
-            s_uart_status_label,
-            lv_color_hex(snapshot.uart_link_active
-                ? UI_COLOR_GREEN : UI_COLOR_RED),
-            LV_PART_MAIN);
-        lv_obj_set_style_text_color(
-            s_can_status_label,
-            lv_color_hex(snapshot.can_link_active
-                ? UI_COLOR_GREEN : UI_COLOR_RED),
-            LV_PART_MAIN);
+        motor_ui_style_set_text_color(s_uart_status_label, snapshot.uart_link_active ? UI_COLOR_GREEN : UI_COLOR_RED);
+        motor_ui_style_set_text_color(s_can_status_label, snapshot.can_link_active ? UI_COLOR_GREEN : UI_COLOR_RED);
         const char *transport_name =
             snapshot.transport == MOTOR_LINK_UART ? "USART"
                 : (snapshot.transport == MOTOR_LINK_CAN ? "CAN" : "NONE");
-        lv_label_set_text_fmt(
-            s_home_transport_label,
-            "LINK %s%s",
-            transport_name,
-            snapshot.transport == MOTOR_LINK_NONE ? ""
-                : (snapshot.link_active ? " ONLINE" : " OFFLINE"));
-        lv_obj_set_style_text_color(
-            s_home_transport_label,
-            lv_color_hex(snapshot.link_active
-                ? UI_COLOR_GREEN : UI_COLOR_RED),
-            LV_PART_MAIN);
-        lv_label_set_text(
-            s_home_run_label,
-            snapshot.motor_fault ? "STATE FAULT"
-                : (snapshot.motor_running ? "STATE RUNNING" : "STATE STOPPED"));
-        lv_obj_set_style_text_color(
-            s_home_run_label,
-            lv_color_hex(snapshot.motor_fault ? UI_COLOR_RED
-                : (snapshot.motor_running ? UI_COLOR_GREEN : UI_COLOR_YELLOW)),
-            LV_PART_MAIN);
-        lv_label_set_text(
-            s_home_state_label,
-            snapshot.transport == MOTOR_LINK_NONE ? "SELECT SERIAL OR CAN"
-                : (snapshot.transceiver_fault ? "CHECK VIO TXD RXD"
-                : (snapshot.bus_off ? "CHECK CAN WIRING"
-                : (snapshot.reconnecting ? "SERIAL RECONNECTING"
-                : (!snapshot.link_active ? "WAITING FOR TELEMETRY"
-                : (snapshot.motor_running ? "MOTOR RUNNING" : "MOTOR READY"))))));
+        lv_label_set_text_fmt(s_home_transport_label, "LINK %s%s", transport_name, snapshot.transport == MOTOR_LINK_NONE ? "" : (snapshot.link_active ? " ONLINE" : " OFFLINE"));
+        motor_ui_style_set_text_color(s_home_transport_label, snapshot.link_active ? UI_COLOR_GREEN : UI_COLOR_RED);
+        lv_label_set_text(s_home_run_label, snapshot.motor_fault ? "STATE FAULT" : (snapshot.motor_running ? "STATE RUNNING" : "STATE STOPPED"));
+        motor_ui_style_set_text_color(s_home_run_label, snapshot.motor_fault ? UI_COLOR_RED : (snapshot.motor_running ? UI_COLOR_GREEN : UI_COLOR_YELLOW));
+        lv_label_set_text(s_home_state_label, snapshot.transport == MOTOR_LINK_NONE ? "SELECT SERIAL OR CAN" : (snapshot.transceiver_fault ? "CHECK VIO TXD RXD" : (snapshot.bus_off ? "CHECK CAN WIRING" : (snapshot.reconnecting ? "SERIAL RECONNECTING" : (!snapshot.link_active ? "WAITING FOR TELEMETRY" : (snapshot.motor_running ? "MOTOR RUNNING" : "MOTOR READY"))))));
     }
 
     if (!s_have_previous_snapshot ||
@@ -1860,60 +1046,26 @@ static void ui_update_motor_data(void)
         snapshot.faults != s_previous_snapshot.faults ||
         snapshot.command_rejected != s_previous_snapshot.command_rejected ||
         snapshot.transmit_errors != s_previous_snapshot.transmit_errors) {
-        lv_label_set_text_fmt(
-            s_link_diag_label,
-            "%s RX %lu   TX %lu   ERR %lu\nFAULT 0x%04X%s",
-            snapshot.transport == MOTOR_LINK_UART ? "UART" : "CAN",
-            (unsigned long)snapshot.received_frames,
-            (unsigned long)snapshot.transmitted_frames,
-            (unsigned long)snapshot.transmit_errors,
-            snapshot.faults,
-            snapshot.command_rejected ? "  CMD REJECTED" : "");
-        lv_label_set_text_fmt(
-            s_home_fault_label,
-            "FAULT 0x%04X%s",
-            snapshot.faults,
-            snapshot.command_rejected ? " CMD" : "");
-        lv_obj_set_style_text_color(
-            s_home_fault_label,
-            lv_color_hex((snapshot.faults != 0U || snapshot.command_rejected)
-                ? UI_COLOR_RED : UI_COLOR_GREEN),
-            LV_PART_MAIN);
+        lv_label_set_text_fmt(s_link_diag_label, "%s RX %lu   TX %lu   ERR %lu\nFAULT 0x%04X%s", snapshot.transport == MOTOR_LINK_UART ? "UART" : "CAN", (unsigned long)snapshot.received_frames, (unsigned long)snapshot.transmitted_frames, (unsigned long)snapshot.transmit_errors, snapshot.faults, snapshot.command_rejected ? "  CMD REJECTED" : "");
+        lv_label_set_text_fmt(s_home_fault_label, "FAULT 0x%04X%s", snapshot.faults, snapshot.command_rejected ? " CMD" : "");
+        motor_ui_style_set_text_color(s_home_fault_label, (snapshot.faults != 0U || snapshot.command_rejected) ? UI_COLOR_RED : UI_COLOR_GREEN);
     }
 
     if (!s_have_previous_snapshot ||
         snapshot.measured_speed_rpm !=
             s_previous_snapshot.measured_speed_rpm) {
-        lv_label_set_text_fmt(
-            s_speed_actual_label,
-            "%d RPM",
-            snapshot.measured_speed_rpm);
-        lv_label_set_text_fmt(
-            s_home_speed_measured_label,
-            "%d RPM",
-            snapshot.measured_speed_rpm);
+        lv_label_set_text_fmt(s_speed_actual_label, "%d RPM", snapshot.measured_speed_rpm);
+        lv_label_set_text_fmt(s_home_speed_measured_label, "%d RPM", snapshot.measured_speed_rpm);
     }
 
     if (!s_have_previous_snapshot ||
         snapshot.reference_speed_rpm !=
             s_previous_snapshot.reference_speed_rpm) {
-        lv_label_set_text_fmt(
-            s_speed_reference_label,
-            "%d RPM",
-            snapshot.reference_speed_rpm);
-        lv_label_set_text_fmt(
-            s_home_speed_target_label,
-            "TARGET %d RPM",
-            snapshot.reference_speed_rpm);
+        lv_label_set_text_fmt(s_speed_reference_label, "%d RPM", snapshot.reference_speed_rpm);
+        lv_label_set_text_fmt(s_home_speed_target_label, "TARGET %d RPM", snapshot.reference_speed_rpm);
         if (!s_speed_dragging && !s_speed_command_pending) {
-            lv_slider_set_value(
-                s_speed_slider,
-                snapshot.reference_speed_rpm,
-                LV_ANIM_OFF);
-            lv_label_set_text_fmt(
-                s_speed_slider_value,
-                "%d RPM",
-                snapshot.reference_speed_rpm);
+            lv_slider_set_value(s_speed_slider, snapshot.reference_speed_rpm, LV_ANIM_OFF);
+            lv_label_set_text_fmt(s_speed_slider_value, "%d RPM", snapshot.reference_speed_rpm);
         }
     }
 
@@ -1921,16 +1073,8 @@ static void ui_update_motor_data(void)
         snapshot.current_position_cdeg !=
             s_previous_snapshot.current_position_cdeg) {
         const uint16_t value = snapshot.current_position_cdeg;
-        lv_label_set_text_fmt(
-            s_position_current_label,
-            "%3u.%02u deg",
-            value / 100U,
-            value % 100U);
-        lv_label_set_text_fmt(
-            s_home_position_current_label,
-            "%u.%02u deg",
-            value / 100U,
-            value % 100U);
+        lv_label_set_text_fmt(s_position_current_label, "%3u.%02u deg", value / 100U, value % 100U);
+        lv_label_set_text_fmt(s_home_position_current_label, "%u.%02u deg", value / 100U, value % 100U);
     }
 
     if ((!s_have_previous_snapshot ||
@@ -1940,16 +1084,8 @@ static void ui_update_motor_data(void)
         !s_position_command_pending) {
         const uint16_t value = snapshot.target_position_cdeg;
         lv_slider_set_value(s_position_slider, value, LV_ANIM_OFF);
-        lv_label_set_text_fmt(
-            s_position_target_label,
-            "%3u.%02u deg",
-            value / 100U,
-            value % 100U);
-        lv_label_set_text_fmt(
-            s_home_position_target_label,
-            "TARGET %u.%02u deg",
-            value / 100U,
-            value % 100U);
+        lv_label_set_text_fmt(s_position_target_label, "%3u.%02u deg", value / 100U, value % 100U);
+        lv_label_set_text_fmt(s_home_position_target_label, "TARGET %u.%02u deg", value / 100U, value % 100U);
     }
 
     if (!s_have_previous_snapshot ||
@@ -1957,52 +1093,25 @@ static void ui_update_motor_data(void)
         snapshot.id_ma != s_previous_snapshot.id_ma ||
         snapshot.iq_reference_ma != s_previous_snapshot.iq_reference_ma ||
         snapshot.id_reference_ma != s_previous_snapshot.id_reference_ma) {
-        lv_label_set_text_fmt(
-            s_electrical_label,
-            "Iq %5dmA  Id %5dmA\nIq* %4dmA  Id* %4dmA",
-            snapshot.iq_ma,
-            snapshot.id_ma,
-            snapshot.iq_reference_ma,
-            snapshot.id_reference_ma);
-        lv_label_set_text_fmt(
-            s_home_current_label,
-            "Iq %5d mA\nId %5d mA",
-            snapshot.iq_ma,
-            snapshot.id_ma);
-        lv_label_set_text_fmt(
-            s_home_current_reference_label,
-            "Iq*%5d mA\nId*%5d mA",
-            snapshot.iq_reference_ma,
-            snapshot.id_reference_ma);
+        lv_label_set_text_fmt(s_electrical_label, "Iq %5dmA  Id %5dmA\nIq* %4dmA  Id* %4dmA", snapshot.iq_ma, snapshot.id_ma, snapshot.iq_reference_ma, snapshot.id_reference_ma);
+        lv_label_set_text_fmt(s_home_current_label, "Iq %5d mA\nId %5d mA", snapshot.iq_ma, snapshot.id_ma);
+        lv_label_set_text_fmt(s_home_current_reference_label, "Iq*%5d mA\nId*%5d mA", snapshot.iq_reference_ma, snapshot.id_reference_ma);
     }
 
     if (!s_have_previous_snapshot ||
         snapshot.uq_mv != s_previous_snapshot.uq_mv ||
         snapshot.ud_mv != s_previous_snapshot.ud_mv) {
-        lv_label_set_text_fmt(
-            s_home_voltage_label,
-            "Uq %5d mV\nUd %5d mV",
-            snapshot.uq_mv,
-            snapshot.ud_mv);
+        lv_label_set_text_fmt(s_home_voltage_label, "Uq %5d mV\nUd %5d mV", snapshot.uq_mv, snapshot.ud_mv);
     }
 
     if (!s_have_previous_snapshot ||
         snapshot.mode != s_previous_snapshot.mode) {
         const bool speed_mode =
             snapshot.mode == MOTOR_LINK_MODE_SPEED;
-        lv_label_set_text(
-            s_speed_mode_button_label,
-            speed_mode ? "SPEED ACTIVE" : "ENABLE SPEED");
-        lv_label_set_text(
-            s_position_mode_button_label,
-            speed_mode ? "ENABLE POS" : "POS ACTIVE");
-        lv_label_set_text(
-            s_home_mode_label,
-            speed_mode ? "MODE SPEED" : "MODE POSITION");
-        lv_obj_set_style_text_color(
-            s_home_mode_label,
-            lv_color_hex(speed_mode ? UI_COLOR_CYAN : UI_COLOR_GREEN),
-            LV_PART_MAIN);
+        lv_label_set_text(s_speed_mode_button_label, speed_mode ? "SPEED ACTIVE" : "ENABLE SPEED");
+        lv_label_set_text(s_position_mode_button_label, speed_mode ? "ENABLE POS" : "POS ACTIVE");
+        lv_label_set_text(s_home_mode_label, speed_mode ? "MODE SPEED" : "MODE POSITION");
+        motor_ui_style_set_text_color(s_home_mode_label, speed_mode ? UI_COLOR_CYAN : UI_COLOR_GREEN);
     }
 
     ui_update_charts(&snapshot);
@@ -2026,19 +1135,9 @@ static void ui_update_wifi_data(void)
         }
 
         for (uint16_t i = 0U; i < s_wifi_network_count; i++) {
-            strlcpy(
-                s_wifi_network_ssids[i],
-                snapshot.aps[i].ssid,
-                sizeof(s_wifi_network_ssids[i]));
+            strlcpy(s_wifi_network_ssids[i], snapshot.aps[i].ssid, sizeof(s_wifi_network_ssids[i]));
             s_wifi_network_secured[i] = snapshot.aps[i].secured;
-            const int written = snprintf(
-                options + used,
-                sizeof(options) - used,
-                "%s%s  %d dBm%s",
-                i == 0U ? "" : "\n",
-                snapshot.aps[i].ssid,
-                snapshot.aps[i].rssi,
-                snapshot.aps[i].secured ? "  *" : "");
+            const int written = snprintf(options + used, sizeof(options) - used, "%s%s  %d dBm%s", i == 0U ? "" : "\n", snapshot.aps[i].ssid, snapshot.aps[i].rssi, snapshot.aps[i].secured ? "  *" : "");
             if (written < 0 || (size_t)written >= sizeof(options) - used) {
                 break;
             }
@@ -2046,31 +1145,22 @@ static void ui_update_wifi_data(void)
         }
 
         if (s_wifi_network_count == 0U) {
-            lv_dropdown_set_options(
-                s_wifi_network_dropdown,
-                "No networks - tap SCAN");
+            lv_dropdown_set_options(s_wifi_network_dropdown, "No networks - tap SCAN");
         } else {
             lv_dropdown_set_options(s_wifi_network_dropdown, options);
             lv_dropdown_set_selected(s_wifi_network_dropdown, 0U);
         }
         s_wifi_scan_generation = snapshot.scan_generation;
-        ui_wifi_update_selected_detail();
+        motor_ui_events_refresh_wifi_detail();
     }
 
     if (snapshot.revision == s_wifi_revision) {
         return;
     }
 
-    lv_obj_set_style_text_color(
-        s_wifi_status_label,
-        lv_color_hex(snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED),
-        LV_PART_MAIN);
+    motor_ui_style_set_text_color(s_wifi_status_label, snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED);
     if (snapshot.connected) {
-        lv_label_set_text_fmt(
-            s_wifi_page_state_label,
-            "CONNECTED: %s\nIP: %s",
-            snapshot.ssid,
-            snapshot.ip_address);
+        lv_label_set_text_fmt(s_wifi_page_state_label, "CONNECTED: %s\nIP: %s", snapshot.ssid, snapshot.ip_address);
     } else {
         lv_label_set_text(s_wifi_page_state_label, snapshot.status);
     }
@@ -2086,33 +1176,22 @@ static void ui_update_mqtt_data(void)
         return;
     }
 
-    lv_obj_set_style_text_color(
-        s_mqtt_status_label,
-        lv_color_hex(snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED),
-        LV_PART_MAIN);
+    motor_ui_style_set_text_color(s_mqtt_status_label, snapshot.connected ? UI_COLOR_GREEN : UI_COLOR_RED);
     if (snapshot.connected) {
-        lv_label_set_text_fmt(
-            s_mqtt_page_state_label,
-            "CONNECTED  TX %lu  RX %lu",
-            (unsigned long)snapshot.transmitted_messages,
-            (unsigned long)snapshot.received_messages);
+        lv_label_set_text_fmt(s_mqtt_page_state_label, "CONNECTED  TX %lu  RX %lu", (unsigned long)snapshot.transmitted_messages, (unsigned long)snapshot.received_messages);
     } else {
         lv_label_set_text(s_mqtt_page_state_label, snapshot.status);
     }
 
     if (snapshot.received_messages > 0U) {
-        lv_label_set_text_fmt(
-            s_mqtt_rx_label,
-            "RX %s\n%s",
-            snapshot.last_topic,
-            snapshot.last_payload);
+        lv_label_set_text_fmt(s_mqtt_rx_label, "RX %s\n%s", snapshot.last_topic, snapshot.last_payload);
     }
     s_mqtt_revision = snapshot.revision;
 }
 
 /**
  * @brief LVGL 周期定时器回调：刷新电机、Wi-Fi 与 MQTT 页面。
- * @param timer Timer instance; unused because all UI state is module-global.
+ * @param timer LVGL 定时器对象；全部 UI 状态均为模块级变量，因此未使用该参数。
  */
 static void ui_timer_callback(lv_timer_t *timer)
 {
@@ -2132,9 +1211,9 @@ static void ui_key_timer_callback(lv_timer_t *timer)
 /**
  * @brief 创建全部常驻 LVGL 页面、共用状态栏及刷新定时器。
  *
- * Pages are pre-created inside an opaque viewport so slide animation never
- * exposes off-page objects. The caller must hold the LVGL port lock.
- * @param display Display used by the UI; NULL leaves construction aborted.
+ * 所有页面预先创建在不透明视口内，防止滑动动画暴露页面外对象。调用者必须
+ * 持有 LVGL 端口锁。
+ * @param display UI 使用的显示器；传入 NULL 时终止创建。
  */
 void motor_ui_create(lv_display_t *display)
 {
@@ -2144,54 +1223,32 @@ void motor_ui_create(lv_display_t *display)
 
     lv_obj_t *screen = lv_screen_active();
     /*
-     * The LCD controller can retain the previous frame across an ESP reset.
-     * Remove every old LVGL child and force an opaque, full-screen redraw
-     * while the backlight is still off so no legacy welcome page can remain.
+     * ESP 复位后 LCD 控制器可能仍保留上一帧。背光尚未打开时删除所有旧 LVGL
+     * 子对象并强制进行不透明全屏重绘，避免旧欢迎页面残留。
      */
     lv_obj_clean(screen);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(
-        screen, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
-    s_page_label = ui_create_label(
-        screen, s_page_names[0], UI_COLOR_MUTED, &lv_font_montserrat_12);
+    motor_ui_style_screen(screen);
+    s_page_label = ui_create_label(screen, s_page_names[0], UI_COLOR_MUTED, &lv_font_montserrat_12);
     lv_obj_align(s_page_label, LV_ALIGN_TOP_LEFT, 6, 5);
 
-    s_mqtt_status_label = ui_create_label(
-        screen, "MQTT", UI_COLOR_RED, &lv_font_montserrat_12);
+    s_mqtt_status_label = ui_create_label(screen, "MQTT", UI_COLOR_RED, &lv_font_montserrat_12);
     lv_obj_align(s_mqtt_status_label, LV_ALIGN_TOP_RIGHT, -6, 5);
-    s_wifi_status_label = ui_create_label(
-        screen, "WI-FI", UI_COLOR_RED, &lv_font_montserrat_12);
-    lv_obj_align_to(
-        s_wifi_status_label, s_mqtt_status_label,
-        LV_ALIGN_OUT_LEFT_MID, -10, 0);
-    s_can_status_label = ui_create_label(
-        screen, "CAN", UI_COLOR_RED, &lv_font_montserrat_12);
-    lv_obj_align_to(
-        s_can_status_label, s_wifi_status_label,
-        LV_ALIGN_OUT_LEFT_MID, -10, 0);
-    s_uart_status_label = ui_create_label(
-        screen, "USART", UI_COLOR_RED, &lv_font_montserrat_12);
-    lv_obj_align_to(
-        s_uart_status_label, s_can_status_label,
-        LV_ALIGN_OUT_LEFT_MID, -12, 0);
+    s_wifi_status_label = ui_create_label(screen, "WI-FI", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_align_to(s_wifi_status_label, s_mqtt_status_label, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+    s_can_status_label = ui_create_label(screen, "CAN", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_align_to(s_can_status_label, s_wifi_status_label, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+    s_uart_status_label = ui_create_label(screen, "USART", UI_COLOR_RED, &lv_font_montserrat_12);
+    lv_obj_align_to(s_uart_status_label, s_can_status_label, LV_ALIGN_OUT_LEFT_MID, -12, 0);
 
     /*
-     * Keep page animations inside one opaque clipping viewport.  Moving page
-     * objects directly on the root screen can expose stale scan lines above
-     * and below the content area when LVGL uses a partial display buffer.
+     * 将页面动画限制在同一个不透明裁剪视口内。LVGL 使用局部显示缓冲区时，
+     * 若直接在根屏幕上移动页面对象，内容区域上下方可能暴露旧扫描线。
      */
     s_page_viewport = lv_obj_create(screen);
     lv_obj_set_size(s_page_viewport, 320, UI_PAGE_HEIGHT);
     lv_obj_set_pos(s_page_viewport, 0, UI_VIEWPORT_TOP);
-    lv_obj_set_style_bg_color(
-        s_page_viewport, lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_page_viewport, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_page_viewport, 0, LV_PART_MAIN);
-    lv_obj_set_style_outline_width(s_page_viewport, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(s_page_viewport, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_page_viewport, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_page_viewport, 0, LV_PART_MAIN);
+    motor_ui_style_viewport(s_page_viewport);
     lv_obj_remove_flag(s_page_viewport, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(s_page_viewport, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
 
@@ -2199,19 +1256,8 @@ void motor_ui_create(lv_display_t *display)
         s_pages[i] = lv_obj_create(s_page_viewport);
         lv_obj_set_size(s_pages[i], 320, UI_PAGE_HEIGHT);
         lv_obj_set_pos(s_pages[i], 0, UI_PAGE_TOP);
-        lv_obj_set_style_bg_color(
-            s_pages[i], lv_color_hex(UI_COLOR_BACKGROUND), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(
-            s_pages[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_radius(s_pages[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_outline_width(s_pages[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_shadow_width(s_pages[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(
-            s_pages[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(
-            s_pages[i], 0, LV_PART_MAIN);
-        lv_obj_remove_flag(
-            s_pages[i], LV_OBJ_FLAG_SCROLLABLE);
+        motor_ui_style_page(s_pages[i]);
+        lv_obj_remove_flag(s_pages[i], LV_OBJ_FLAG_SCROLLABLE);
     }
 
     ui_create_navigation_page(s_pages[UI_PAGE_HOME]);
@@ -2224,6 +1270,39 @@ void motor_ui_create(lv_display_t *display)
     ui_create_position_page(s_pages[UI_PAGE_POSITION]);
     ui_create_speed_chart_page(s_pages[UI_PAGE_SPEED_CHART]);
     ui_create_current_chart_page(s_pages[UI_PAGE_CURRENT_CHART]);
+
+    const motor_ui_event_context_t event_context = {
+        .baud_dropdown = s_baud_dropdown,
+        .home_state_label = s_home_state_label,
+        .can_state_label = s_can_state_label,
+        .wifi_network_dropdown = s_wifi_network_dropdown,
+        .wifi_password_textarea = s_wifi_password_textarea,
+        .wifi_page_state_label = s_wifi_page_state_label,
+        .wifi_detail_label = s_wifi_detail_label,
+        .wifi_keyboard = s_wifi_keyboard,
+        .mqtt_uri_textarea = s_mqtt_uri_textarea,
+        .mqtt_page_state_label = s_mqtt_page_state_label,
+        .mqtt_keyboard = s_mqtt_keyboard,
+        .speed_slider = s_speed_slider,
+        .speed_slider_value = s_speed_slider_value,
+        .position_slider = s_position_slider,
+        .position_target_label = s_position_target_label,
+        .speed_dragging = &s_speed_dragging,
+        .speed_command_pending = &s_speed_command_pending,
+        .pending_speed_rpm = &s_pending_speed_rpm,
+        .speed_command_tick = &s_speed_command_tick,
+        .position_dragging = &s_position_dragging,
+        .position_command_pending = &s_position_command_pending,
+        .pending_position_cdeg = &s_pending_position_cdeg,
+        .position_command_tick = &s_position_command_tick,
+        .wifi_network_count = &s_wifi_network_count,
+        .wifi_network_secured = s_wifi_network_secured,
+        .wifi_network_ssids = s_wifi_network_ssids,
+        .uart_baud_rates = s_uart_baud_rates,
+        .uart_baud_rate_count = sizeof(s_uart_baud_rates) /
+                                sizeof(s_uart_baud_rates[0]),
+    };
+    motor_ui_events_configure(&event_context);
 
     ui_show_page(UI_PAGE_HOME);
     lv_obj_move_foreground(s_page_label);
@@ -2238,12 +1317,12 @@ void motor_ui_create(lv_display_t *display)
     ui_update_mqtt_data();
     lv_obj_update_layout(screen);
     lv_obj_invalidate(screen);
-    /* The LVGL port task performs the invalidated full-screen refresh. */
+    /* 由 LVGL 端口任务执行已经标记失效的全屏刷新。 */
 }
 
 /**
  * @brief 将已注册的 LVGL 指针设备绑定到创建好的 UI 屏幕。
- * @param indev Touch/encoder device; NULL is ignored.
+ * @param indev 触摸或编码器输入设备；传入 NULL 时忽略。
  */
 void motor_ui_attach_input(lv_indev_t *indev)
 {
@@ -2251,8 +1330,6 @@ void motor_ui_attach_input(lv_indev_t *indev)
         return;
     }
 
-    lv_indev_add_event_cb(
-        indev, ui_input_event, LV_EVENT_PRESSED, indev);
-    lv_indev_add_event_cb(
-        indev, ui_input_event, LV_EVENT_RELEASED, indev);
+    lv_indev_add_event_cb(indev, motor_ui_input_event, LV_EVENT_PRESSED, indev);
+    lv_indev_add_event_cb(indev, motor_ui_input_event, LV_EVENT_RELEASED, indev);
 }

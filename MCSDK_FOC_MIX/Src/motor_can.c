@@ -32,6 +32,7 @@ static uint8_t MotorCan_LastSequence;
 static uint8_t MotorCan_LastCommand;
 static bool MotorCan_CommandRejected;
 
+/** @brief 计算 MotorCan_ClampS16 对应的电机控制量或数学结果。 */
 static int16_t MotorCan_ClampS16(int32_t value)
 {
   if (value > INT16_MAX)
@@ -45,6 +46,7 @@ static int16_t MotorCan_ClampS16(int32_t value)
   return (int16_t)value;
 }
 
+/** @brief 执行 MotorCan_FloatToS32 对应的模块功能。 */
 static int32_t MotorCan_FloatToS32(float value)
 {
   if (value > 2147483000.0F)
@@ -58,6 +60,7 @@ static int32_t MotorCan_FloatToS32(float value)
   return (int32_t)value;
 }
 
+/** @brief 计算 MotorCan_NormalizeCdeg 对应的电机控制量或数学结果。 */
 static int32_t MotorCan_NormalizeCdeg(int32_t positionCdeg)
 {
   int32_t normalized = positionCdeg % 36000;
@@ -68,12 +71,14 @@ static int32_t MotorCan_NormalizeCdeg(int32_t positionCdeg)
   return normalized;
 }
 
+/** @brief 执行 MotorCan_LinkActive 对应的模块功能。 */
 static bool MotorCan_LinkActive(uint32_t now)
 {
   return (MotorCan_LastCommandTick != 0UL) &&
          ((now - MotorCan_LastCommandTick) <= MOTOR_CAN_LINK_TIMEOUT_MS);
 }
 
+/** @brief 编码并发送 MotorCan_Send 对应的数据或通信帧。 */
 static bool MotorCan_Send(uint32_t identifier, const uint8_t data[8])
 {
   FDCAN_TxHeaderTypeDef header = {0};
@@ -96,6 +101,7 @@ static bool MotorCan_Send(uint32_t identifier, const uint8_t data[8])
            &MotorCan_Handle, &header, data) == HAL_OK;
 }
 
+/** @brief 设置 MotorCan_SetNearestSingleTurnPosition 对应的控制参数、目标值或外设配置。 */
 static bool MotorCan_SetNearestSingleTurnPosition(int32_t targetSingleTurnCdeg)
 {
   const int32_t currentCdeg = MotorCan_FloatToS32(
@@ -123,6 +129,7 @@ static bool MotorCan_SetNearestSingleTurnPosition(int32_t targetSingleTurnCdeg)
   return FocApp_SetPositionCommand(currentCdeg + delta, durationMs);
 }
 
+/** @brief 执行 MotorCan_ExecuteCommand 对应的周期任务或电机控制流程。 */
 static bool MotorCan_ExecuteCommand(const uint8_t data[8])
 {
   const MotorCan_Command_t command = (MotorCan_Command_t)data[2];
@@ -160,6 +167,7 @@ static bool MotorCan_ExecuteCommand(const uint8_t data[8])
   }
 }
 
+/** @brief 执行 MotorCan_ProcessRx 对应的周期任务或电机控制流程。 */
 static void MotorCan_ProcessRx(void)
 {
   while (HAL_FDCAN_GetRxFifoFillLevel(
@@ -197,6 +205,7 @@ static void MotorCan_ProcessRx(void)
   }
 }
 
+/** @brief 执行 MotorCan_ServiceBus 对应的模块功能。 */
 static bool MotorCan_ServiceBus(uint32_t now)
 {
   FDCAN_ProtocolStatusTypeDef status = {0};
@@ -234,6 +243,7 @@ static bool MotorCan_ServiceBus(uint32_t now)
   return false;
 }
 
+/** @brief 编码并发送 MotorCan_SendStatus 对应的数据或通信帧。 */
 static void MotorCan_SendStatus(uint32_t now)
 {
   uint8_t data[8] = {0};
@@ -272,6 +282,7 @@ static void MotorCan_SendStatus(uint32_t now)
   (void)MotorCan_Send(MOTOR_CAN_ID_STATUS, data);
 }
 
+/** @brief 编码并发送 MotorCan_SendReferences 对应的数据或通信帧。 */
 static void MotorCan_SendReferences(void)
 {
   uint8_t data[8] = {0};
@@ -288,6 +299,7 @@ static void MotorCan_SendReferences(void)
   (void)MotorCan_Send(MOTOR_CAN_ID_REFERENCES, data);
 }
 
+/** @brief 编码并发送 MotorCan_SendElectrical 对应的数据或通信帧。 */
 static void MotorCan_SendElectrical(void)
 {
   uint8_t data[8] = {0};
@@ -305,6 +317,7 @@ static void MotorCan_SendElectrical(void)
   (void)MotorCan_Send(MOTOR_CAN_ID_ELECTRICAL, data);
 }
 
+/** @brief 初始化 MotorCan_Init 所属模块、外设或运行状态。 */
 bool MotorCan_Init(void)
 {
   GPIO_InitTypeDef gpio = {0};
@@ -383,6 +396,7 @@ bool MotorCan_Init(void)
   return true;
 }
 
+/** @brief 执行 MotorCan_Tick 对应的周期任务或电机控制流程。 */
 void MotorCan_Tick(void)
 {
   uint32_t now = HAL_GetTick();

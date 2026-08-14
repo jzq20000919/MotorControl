@@ -53,8 +53,11 @@
 /* USER CODE END PRIVATE */
 
 /* Public prototypes of IRQ handlers called from assembly code ---------------*/
+/** @brief 处理 ADC1/ADC2 共用中断。 */
 void ADC1_2_IRQHandler(void);
+/** @brief 处理电机 1 PWM 定时器更新中断。 */
 void TIMx_UP_M1_IRQHandler(void);
+/** @brief 处理电机 1 PWM 定时器刹车中断。 */
 void TIMx_BRK_M1_IRQHandler(void);
 
 #if defined (CCMRAM)
@@ -67,6 +70,7 @@ __attribute__((section (".ccmram")))
 /**
   * @brief  This function handles ADC1/ADC2 interrupt request.
   * @param  None
+  * @note 中文说明：处理 ADC1_2_IRQHandler 对应的硬件中断、故障或事件。
   */
 void ADC1_2_IRQHandler(void)
 {
@@ -91,6 +95,7 @@ __attribute__((section (".ccmram")))
 /**
   * @brief  This function handles first motor TIMx Update interrupt request.
   * @param  None
+  * @note 中文说明：处理 TIMx_UP_M1_IRQHandler 对应的硬件中断、故障或事件。
   */
 void TIMx_UP_M1_IRQHandler(void)
 {
@@ -106,6 +111,7 @@ void TIMx_UP_M1_IRQHandler(void)
  /* USER CODE END  TIMx_UP_M1_IRQn 1 */
 }
 
+/** @brief 处理 TIMx_BRK_M1_IRQHandler 对应的硬件中断、故障或事件。 */
 void TIMx_BRK_M1_IRQHandler(void)
 {
   /* USER CODE BEGIN TIMx_BRK_M1_IRQn 0 */

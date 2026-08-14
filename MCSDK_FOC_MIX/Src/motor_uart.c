@@ -45,6 +45,7 @@ typedef struct
 
 static MotorUart_State_t motorUart;
 
+/** @brief 执行 MotorUart_Crc16 对应的模块功能。 */
 static uint16_t MotorUart_Crc16(const uint8_t *data, uint16_t length)
 {
   uint16_t crc = 0xFFFFU;
@@ -59,6 +60,7 @@ static uint16_t MotorUart_Crc16(const uint8_t *data, uint16_t length)
   return crc;
 }
 
+/** @brief 计算 MotorUart_ClampS16 对应的电机控制量或数学结果。 */
 static int16_t MotorUart_ClampS16(int32_t value)
 {
   if (value > INT16_MAX) return INT16_MAX;
@@ -66,6 +68,7 @@ static int16_t MotorUart_ClampS16(int32_t value)
   return (int16_t)value;
 }
 
+/** @brief 执行 MotorUart_FloatToS32 对应的模块功能。 */
 static int32_t MotorUart_FloatToS32(float value)
 {
   if (value > 2147483000.0F) return INT32_MAX;
@@ -73,18 +76,21 @@ static int32_t MotorUart_FloatToS32(float value)
   return (int32_t)value;
 }
 
+/** @brief 计算 MotorUart_NormalizeCdeg 对应的电机控制量或数学结果。 */
 static int32_t MotorUart_NormalizeCdeg(int32_t cdeg)
 {
   cdeg %= 36000;
   return cdeg < 0 ? cdeg + 36000 : cdeg;
 }
 
+/** @brief 执行 MotorUart_LinkActive 对应的模块功能。 */
 static bool MotorUart_LinkActive(void)
 {
   return (motorUart.lastCommandTick != 0U) &&
          ((HAL_GetTick() - motorUart.lastCommandTick) <= MOTOR_UART_LINK_TIMEOUT_MS);
 }
 
+/** @brief 设置 MotorUart_SetNearestSingleTurnPosition 对应的控制参数、目标值或外设配置。 */
 static bool MotorUart_SetNearestSingleTurnPosition(int32_t targetCdeg)
 {
   const int32_t current = MotorUart_FloatToS32(MC_GetCurrentPosition1() * MOTOR_UART_CDEG_PER_RAD);
@@ -94,6 +100,7 @@ static bool MotorUart_SetNearestSingleTurnPosition(int32_t targetCdeg)
   return FocApp_SetPositionCommand(current + delta, 1000U);
 }
 
+/** @brief 执行 MotorUart_HandleCommand 对应的模块功能。 */
 static bool MotorUart_HandleCommand(const uint8_t *payload)
 {
   const int32_t value = MotorUart_ReadS32(&payload[1]);
@@ -121,6 +128,7 @@ static bool MotorUart_HandleCommand(const uint8_t *payload)
   }
 }
 
+/** @brief 接收并解析 MotorUart_ParseByte 对应的数据或通信帧。 */
 static void MotorUart_ParseByte(uint8_t byte)
 {
   if (motorUart.parserLength == 0U)
@@ -173,6 +181,7 @@ static void MotorUart_ParseByte(uint8_t byte)
   motorUart.parserLength = 0U;
 }
 
+/** @brief 获取 MotorUart_ReadDma 对应的状态、配置或计算结果。 */
 static void MotorUart_ReadDma(void)
 {
   const uint16_t head = (uint16_t)(
@@ -190,6 +199,7 @@ static void MotorUart_ReadDma(void)
   }
 }
 
+/** @brief 编码并发送 MotorUart_SendTelemetry 对应的数据或通信帧。 */
 static void MotorUart_SendTelemetry(void)
 {
   uint8_t frame[32] = {0U};
@@ -237,6 +247,7 @@ static void MotorUart_SendTelemetry(void)
   }
 }
 
+/** @brief 初始化 MotorUart_Init 所属模块、外设或运行状态。 */
 bool MotorUart_Init(void)
 {
   GPIO_InitTypeDef gpio = {0};
@@ -295,6 +306,7 @@ bool MotorUart_Init(void)
   return true;
 }
 
+/** @brief 执行 MotorUart_Process 对应的周期任务或电机控制流程。 */
 void MotorUart_Process(void)
 {
   if (!motorUart.initialized) return;
@@ -312,6 +324,7 @@ void MotorUart_Process(void)
   }
 }
 
+/** @brief 获取 MotorUart_GetDiagnostics 对应的状态、配置或计算结果。 */
 void MotorUart_GetDiagnostics(MotorUart_Diagnostics_t *diagnostics)
 {
   if (diagnostics == NULL) return;

@@ -67,6 +67,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   *                       beta = -(2*b+a)/sqrt(3)
   * @param  Input: stator values a and b in ab_t format.
   * @retval Stator values alpha and beta in alphabeta_t format.
+  * @note 中文说明：计算 MCM_Clarke 对应的电机控制量或数学结果。
   */
 __weak alphabeta_t MCM_Clarke(ab_t Input)
 {
@@ -139,6 +140,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @param  Input: stator values alpha and beta in alphabeta_t format.
   * @param  Theta: rotating frame angular position in q1.15 format.
   * @retval Stator values q and d in qd_t format
+  * @note 中文说明：计算 MCM_Park 对应的电机控制量或数学结果。
   */
 __weak qd_t MCM_Park(alphabeta_t Input, int16_t Theta)
 {
@@ -254,6 +256,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @param  Input: stator voltage Vq and Vd in qd_t format.
   * @param  Theta: rotating frame angular position in q1.15 format.
   * @retval Stator voltage Valpha and Vbeta in qd_t format.
+  * @note 中文说明：计算 MCM_Rev_Park 对应的电机控制量或数学结果。
   */
 __weak alphabeta_t MCM_Rev_Park(qd_t Input, int16_t Theta)
 {
@@ -307,6 +310,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @brief  This function returns cosine and sine functions of the angle fed in input.
   * @param  hAngle: angle in q1.15 format.
   * @retval Sin(angle) and Cos(angle) in Trig_Components format.
+  * @note 中文说明：计算 MCM_Trig_Functions 对应的电机控制量或数学结果。
   */
 
 __weak Trig_Components MCM_Trig_Functions(int16_t hAngle)
@@ -352,6 +356,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @brief  It calculates the square root of a non-negative int32_t. It returns 0 for negative int32_t.
   * @param  Input int32_t number.
   * @retval int32_t Square root of Input (0 if Input<0).
+  * @note 中文说明：计算 MCM_Sqrt 对应的电机控制量或数学结果。
   */
 __weak int32_t MCM_Sqrt(int32_t wInput)
 {
@@ -387,6 +392,7 @@ __weak int32_t MCM_Sqrt(int32_t wInput)
   * @brief  This function codify a floating point number into the relative 32bit integer.
   * @param  float Floating point number to be coded.
   * @retval uint32_t Coded 32bit integer.
+  * @note 中文说明：执行 MCM_floatToIntBit 对应的模块功能。
   */
 __weak uint32_t MCM_floatToIntBit( float_t x ) //cstat !MISRAC2012-Dir-4.6_a
 {

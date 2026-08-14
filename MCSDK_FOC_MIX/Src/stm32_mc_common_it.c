@@ -57,15 +57,20 @@
 /* Private functions ---------------------------------------------------------*/
 /* USER CODE END PRIVATE */
 
+/** @brief 处理 EXTI5 至 EXTI9 外部中断。 */
 void EXTI9_5_IRQHandler(void);
+/** @brief 处理 Cortex-M4 硬故障异常。 */
 void HardFault_Handler(void);
+/** @brief 处理系统节拍中断。 */
 void SysTick_Handler(void);
 
+/** @brief 处理电机 1 编码器定时器中断。 */
 void SPD_ENC_TIM_M1_IRQHandler(void);
 
 /**
   * @brief  This function handles TIMx global interrupt request for M1 Speed Sensor.
   * @param  None
+  * @note 中文说明：处理 SPD_ENC_TIM_M1_IRQHandler 对应的硬件中断、故障或事件。
   */
 void SPD_ENC_TIM_M1_IRQHandler(void)
 {
@@ -106,6 +111,7 @@ void SPD_ENC_TIM_M1_IRQHandler(void)
   * @param  None
   */
 //cstat !MISRAC2012-Rule-8.4
+/** @brief 处理 USART2_IRQHandler 对应的硬件中断、故障或事件。 */
 void USART2_IRQHandler(void)
 {
   /* USER CODE BEGIN USART2_IRQHandler 0 */
@@ -183,6 +189,7 @@ void USART2_IRQHandler(void)
 /**
   * @brief  This function handles Hard Fault exception.
   * @param  None
+  * @note 中文说明：处理 HardFault_Handler 对应的硬件中断、故障或事件。
   */
 void HardFault_Handler(void)
 {
@@ -203,6 +210,7 @@ void HardFault_Handler(void)
  /* USER CODE END HardFault_IRQn 1 */
 }
 
+/** @brief 处理 SysTick_Handler 对应的硬件中断、故障或事件。 */
 void SysTick_Handler(void)
 {
 #ifdef MC_HAL_IS_USED
@@ -250,6 +258,7 @@ static uint8_t SystickDividerCounter = SYSTICK_DIVIDER;
 /**
   * @brief  This function handles Button IRQ on PIN PC9.
 
+  * @note 中文说明：处理 EXTI9_5_IRQHandler 对应的硬件中断、故障或事件。
   */
 void EXTI9_5_IRQHandler(void)
 {

@@ -61,9 +61,11 @@ extern DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE END 0 */
 
+/** @brief 完成定时器 GPIO 等 MSP 后初始化配置。 */
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                     /**
   * Initializes the Global MSP.
+  * @note 中文说明：初始化 HAL_MspInit 所属模块、外设或运行状态。
   */
 void HAL_MspInit(void)
 {
@@ -95,6 +97,7 @@ static uint32_t HAL_RCC_ADC12_CLK_ENABLED=0;
   * This function configures the hardware resources used in this example
   * @param hadc: ADC handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_ADC_MspInit 所属模块、外设或运行状态。
   */
 void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
 {
@@ -186,6 +189,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
   * This function freeze the hardware resources used in this example
   * @param hadc: ADC handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_ADC_MspDeInit 对应的外设与模块状态。
   */
 void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
 {
@@ -261,6 +265,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
   * This function configures the hardware resources used in this example
   * @param hcordic: CORDIC handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_CORDIC_MspInit 所属模块、外设或运行状态。
   */
 void HAL_CORDIC_MspInit(CORDIC_HandleTypeDef* hcordic)
 {
@@ -284,6 +289,7 @@ void HAL_CORDIC_MspInit(CORDIC_HandleTypeDef* hcordic)
   * This function freeze the hardware resources used in this example
   * @param hcordic: CORDIC handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_CORDIC_MspDeInit 对应的外设与模块状态。
   */
 void HAL_CORDIC_MspDeInit(CORDIC_HandleTypeDef* hcordic)
 {
@@ -306,6 +312,7 @@ void HAL_CORDIC_MspDeInit(CORDIC_HandleTypeDef* hcordic)
   * This function configures the hardware resources used in this example
   * @param hdac: DAC handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_DAC_MspInit 所属模块、外设或运行状态。
   */
 void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
 {
@@ -340,6 +347,7 @@ void HAL_DAC_MspInit(DAC_HandleTypeDef* hdac)
   * This function freeze the hardware resources used in this example
   * @param hdac: DAC handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_DAC_MspDeInit 对应的外设与模块状态。
   */
 void HAL_DAC_MspDeInit(DAC_HandleTypeDef* hdac)
 {
@@ -368,6 +376,7 @@ void HAL_DAC_MspDeInit(DAC_HandleTypeDef* hdac)
   * This function configures the hardware resources used in this example
   * @param hopamp: OPAMP handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_OPAMP_MspInit 所属模块、外设或运行状态。
   */
 void HAL_OPAMP_MspInit(OPAMP_HandleTypeDef* hopamp)
 {
@@ -443,6 +452,7 @@ void HAL_OPAMP_MspInit(OPAMP_HandleTypeDef* hopamp)
   * This function freeze the hardware resources used in this example
   * @param hopamp: OPAMP handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_OPAMP_MspDeInit 对应的外设与模块状态。
   */
 void HAL_OPAMP_MspDeInit(OPAMP_HandleTypeDef* hopamp)
 {
@@ -505,6 +515,7 @@ void HAL_OPAMP_MspDeInit(OPAMP_HandleTypeDef* hopamp)
   * This function configures the hardware resources used in this example
   * @param htim_pwm: TIM_PWM handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_TIM_PWM_MspInit 所属模块、外设或运行状态。
   */
 void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim_pwm)
 {
@@ -541,6 +552,7 @@ void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim_pwm)
   * This function configures the hardware resources used in this example
   * @param htim_encoder: TIM_Encoder handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_TIM_Encoder_MspInit 所属模块、外设或运行状态。
   */
 void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* htim_encoder)
 {
@@ -573,6 +585,7 @@ void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* htim_encoder)
 
 }
 
+/** @brief 初始化 HAL_TIM_MspPostInit 所属模块、外设或运行状态。 */
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -624,6 +637,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
   * This function freeze the hardware resources used in this example
   * @param htim_pwm: TIM_PWM handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_TIM_PWM_MspDeInit 对应的外设与模块状态。
   */
 void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* htim_pwm)
 {
@@ -665,6 +679,7 @@ void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* htim_pwm)
   * This function freeze the hardware resources used in this example
   * @param htim_encoder: TIM_Encoder handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_TIM_Encoder_MspDeInit 对应的外设与模块状态。
   */
 void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* htim_encoder)
 {
@@ -696,6 +711,7 @@ void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef* htim_encoder)
   * This function configures the hardware resources used in this example
   * @param huart: UART handle pointer
   * @retval None
+  * @note 中文说明：初始化 HAL_UART_MspInit 所属模块、外设或运行状态。
   */
 void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 {
@@ -779,6 +795,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
   * This function freeze the hardware resources used in this example
   * @param huart: UART handle pointer
   * @retval None
+  * @note 中文说明：释放或复位 HAL_UART_MspDeInit 对应的外设与模块状态。
   */
 void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
 {

@@ -54,6 +54,7 @@
   * @param  txSyncFreeSpace Space available for synchronous transmission
   *
   * @retval Returns #MCP_CMD_OK if the command is acknowledged and #MCP_CMD_NOK if not.
+  * @note 中文说明：设置 RI_SetRegCommandParser 对应的控制参数、目标值或外设配置。
   */
 uint8_t RI_SetRegCommandParser (MCP_Handle_t * pHandle, uint16_t txSyncFreeSpace)
 {
@@ -157,6 +158,7 @@ uint8_t RI_SetRegCommandParser (MCP_Handle_t * pHandle, uint16_t txSyncFreeSpace
   * @param  txSyncFreeSpace Space available for synchronous transmission
   *
   * @retval Returns #MCP_CMD_OK if the command is acknowledged and #MCP_CMD_NOK if not.
+  * @note 中文说明：获取 RI_GetRegCommandParser 对应的状态、配置或计算结果。
   */
 uint8_t RI_GetRegCommandParser (MCP_Handle_t * pHandle, uint16_t txSyncFreeSpace)
 {
@@ -223,6 +225,7 @@ uint8_t RI_GetRegCommandParser (MCP_Handle_t * pHandle, uint16_t txSyncFreeSpace
   * @brief  Parses the header from the received packet and call the required function depending on the command sent by the controller device.
   *
   * @param  pHandle Handler of the current instance of the MCP component
+  * @note 中文说明：接收并解析 MCP_ReceivedPacket 对应的数据或通信帧。
   */
 void MCP_ReceivedPacket(MCP_Handle_t *pHandle)
 {
@@ -403,6 +406,7 @@ void MCP_ReceivedPacket(MCP_Handle_t *pHandle)
   * @param  fctCB: User call back function structure
   *
   * @retval Returns #MCP_CMD_OK if the command is acknowledged and #MCP_CMD_NOK if not
+  * @note 中文说明：注册 MCP_RegisterCallBack 对应的回调函数或通信接口。
   */
 uint8_t MCP_RegisterCallBack (uint8_t callBackID, MCP_user_cb_t fctCB)
 {

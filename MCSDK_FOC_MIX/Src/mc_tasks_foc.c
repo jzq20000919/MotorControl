@@ -93,14 +93,21 @@ static volatile uint16_t hStopPermanencyCounterM1 = ((uint16_t)0);
 /* USER CODE END Private Variables */
 
 /* Private functions ---------------------------------------------------------*/
+/** @brief 执行电机 1 中频状态机任务。 */
 void TSK_MediumFrequencyTaskM1(void);
+/** @brief 初始化指定电机的 FOC 附加控制方法。 */
 void FOC_InitAdditionalMethods(uint8_t bMotor);
+/** @brief 计算指定电机的 FOC 电流参考值。 */
 void FOC_CalcCurrRef(uint8_t bMotor);
+/** @brief 执行指定电机的中频停止处理。 */
 void TSK_MF_StopProcessing(uint8_t motor);
 
+/** @brief 获取指定电机的 MCI 控制接口句柄。 */
 MCI_Handle_t *GetMCI(uint8_t bMotor);
+/** @brief 执行电机 1 的 FOC 电流闭环控制器。 */
 static uint16_t FOC_CurrControllerM1(void);
 
+/** @brief 在关闭 PWM 的条件下执行指定电机安全任务。 */
 void TSK_SafetyTask_PWMOFF(uint8_t motor);
 
 /* USER CODE BEGIN Private Functions */
@@ -109,6 +116,7 @@ void TSK_SafetyTask_PWMOFF(uint8_t motor);
 /**
   * @brief  It initializes the whole MC core according to user defined
   *         parameters.
+  * @note 中文说明：初始化 FOC_Init 所属模块、外设或运行状态。
   */
 __weak void FOC_Init(void)
 {
@@ -186,6 +194,7 @@ __weak void FOC_Init(void)
 /**
  * @brief Performs stop process and update the state machine.This function
  *        shall be called only during medium frequency task.
+ * @note 中文说明：停止或禁用 TSK_MF_StopProcessing 对应的外设与控制流程。
  */
 void TSK_MF_StopProcessing(uint8_t motor)
 {
@@ -205,6 +214,7 @@ void TSK_MF_StopProcessing(uint8_t motor)
   * present state of its state machine. In particular, duties requiring a periodic
   * execution at a medium frequency rate (such as the speed controller for instance)
   * are executed here.
+  * @note 中文说明：执行 TSK_MediumFrequencyTaskM1 对应的周期任务或电机控制流程。
   */
 __weak void TSK_MediumFrequencyTaskM1(void)
 {
@@ -469,6 +479,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
   *         controller. It must be called before each motor restart.
   *         It does not clear speed sensor.
   * @param  bMotor related motor it can be M1 or M2.
+  * @note 中文说明：清除或确认 FOC_Clear 对应的状态与历史数据。
   */
 __weak void FOC_Clear(uint8_t bMotor)
 {
@@ -503,6 +514,7 @@ __weak void FOC_Clear(uint8_t bMotor)
   * @brief  Use this method to initialize additional methods (if any) in
   *         START_TO_RUN state.
   * @param  bMotor related motor it can be M1 or M2.
+  * @note 中文说明：初始化 FOC_InitAdditionalMethods 所属模块、外设或运行状态。
   */
 __weak void FOC_InitAdditionalMethods(uint8_t bMotor) //cstat !RED-func-no-effect
 {
@@ -526,6 +538,7 @@ __weak void FOC_InitAdditionalMethods(uint8_t bMotor) //cstat !RED-func-no-effec
   *         MTPA algorithm(s). It must be called with the periodicity specified
   *         in oTSC parameters.
   * @param  bMotor related motor it can be M1 or M2.
+  * @note 中文说明：计算 FOC_CalcCurrRef 对应的电机控制量或数学结果。
   */
 __weak void FOC_CalcCurrRef(uint8_t bMotor)
 {
@@ -581,6 +594,7 @@ __attribute__((section (".ccmram")))
   * subsystem (see the state machine(s)).
   * @param bMotorNbr Motor reference number defined
   * @retval Number of the  motor instance which FOC loop was executed.
+  * @note 中文说明：执行 FOC_HighFrequencyTask 对应的周期任务或电机控制流程。
   */
 __weak uint8_t FOC_HighFrequencyTask(uint8_t bMotorNbr)
 {
@@ -631,6 +645,7 @@ __attribute__((section (".ccmram")))
   * @param this related object of class CFOC.
   * @retval int16_t It returns MC_NO_FAULTS if the FOC has been ended before
   *         next PWM Update event, MC_DURATION otherwise
+  * @note 中文说明：执行 FOC_CurrControllerM1 对应的周期任务或电机控制流程。
   */
 inline uint16_t FOC_CurrControllerM1(void)
 {

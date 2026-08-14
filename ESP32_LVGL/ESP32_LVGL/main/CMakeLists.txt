@@ -1,11 +1,15 @@
 idf_component_register(
     SRCS
         "main.c"
+        "bsp_xl9555.c"
+        "bsp_lcd.c"
         "board_touch.c"
         "motor_uart.c"
         "motor_can.c"
         "motor_link.c"
         "motor_ui.c"
+        "motor_ui_events.c"
+        "motor_ui_style.c"
         "wifi_manager.c"
         "mqtt_manager.c"
         "mqtt_motor_gateway.c"

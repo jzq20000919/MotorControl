@@ -3,7 +3,9 @@
 
 #include "esp_err.h"
 
+/** @brief 周期发布电机遥测数据的 MQTT 主题。 */
 #define MQTT_MOTOR_TELEMETRY_TOPIC "motor/control/telemetry"
+/** @brief 发布电机命令执行确认的 MQTT 主题。 */
 #define MQTT_MOTOR_ACK_TOPIC       "motor/control/ack"
 
 /**

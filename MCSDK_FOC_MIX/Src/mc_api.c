@@ -91,6 +91,7 @@
   * Note also that if the startup sequence fails the #RUN state may never be reached.
   *
   * @retval returns true if the command is successfully executed, false otherwise.
+  * @note 中文说明：启动或使能 MC_StartMotor1 对应的外设与控制流程。
   */
 __weak bool MC_StartMotor1(void)
 {
@@ -111,6 +112,7 @@ __weak bool MC_StartMotor1(void)
   * machine and check if the #IDLE state has been reached.
   *
   * @retval returns true if the command is successfully executed, false otherwise.
+  * @note 中文说明：停止或禁用 MC_StopMotor1 对应的外设与控制流程。
   */
 __weak bool MC_StopMotor1(void)
 {
@@ -146,6 +148,7 @@ __weak bool MC_StopMotor1(void)
   * @param  hDurationms Duration of the ramp expressed in milliseconds. It
   *         is possible to set 0 to perform an instantaneous change in the speed
   *         value.
+  * @note 中文说明：设置 MC_ProgramSpeedRampMotor1 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_ProgramSpeedRampMotor1(int16_t hFinalSpeed, uint16_t hDurationms)
 {
@@ -181,6 +184,7 @@ __weak void MC_ProgramSpeedRampMotor1(int16_t hFinalSpeed, uint16_t hDurationms)
   * @param  hDurationms Duration of the ramp expressed in milliseconds. It
   *         is possible to set 0 to perform an instantaneous change in the speed
   *         value.
+  * @note 中文说明：设置 MC_ProgramSpeedRampMotor1_F 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_ProgramSpeedRampMotor1_F(float_t FinalSpeed, uint16_t hDurationms)
 {
@@ -216,6 +220,7 @@ __weak void MC_ProgramSpeedRampMotor1_F(float_t FinalSpeed, uint16_t hDurationms
   * @param  hDurationms Duration of the ramp expressed in milliseconds. It
   *         is possible to set 0 to perform an instantaneous change in the torque
   *         value.
+  * @note 中文说明：设置 MC_ProgramTorqueRampMotor1 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_ProgramTorqueRampMotor1(int16_t hFinalTorque, uint16_t hDurationms)
 {
@@ -251,6 +256,7 @@ __weak void MC_ProgramTorqueRampMotor1(int16_t hFinalTorque, uint16_t hDurationm
   * @param  hDurationms Duration of the ramp expressed in milliseconds. It
   *         is possible to set 0 to perform an instantaneous change in the torque
   *         value.
+  * @note 中文说明：设置 MC_ProgramTorqueRampMotor1_F 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_ProgramTorqueRampMotor1_F(float_t FinalTorque, uint16_t hDurationms)
 {
@@ -278,6 +284,7 @@ __weak void MC_ProgramTorqueRampMotor1_F(float_t FinalTorque, uint16_t hDuration
   *         This value represents the final position expressed in radian.
   * @param  fDuration Duration of the movement expressed in seconds.
   *         It is possible to set 0 to perform an instantaneous angular change (follow mode).
+  * @note 中文说明：设置 MC_ProgramPositionCommandMotor1 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_ProgramPositionCommandMotor1(float_t fTargetPosition, float_t fDuration)
 {
@@ -302,6 +309,7 @@ __weak void MC_ProgramPositionCommandMotor1(float_t fTargetPosition, float_t fDu
   *
   * @param  Iqdref current reference in the Direct-Quadratic reference frame. Expressed
   *         in the qd_t format.
+  * @note 中文说明：设置 MC_SetCurrentReferenceMotor1 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_SetCurrentReferenceMotor1(qd_t Iqdref)
 {
@@ -326,6 +334,7 @@ __weak void MC_SetCurrentReferenceMotor1(qd_t Iqdref)
   *
   * @param  IqdRef current reference in the Direct-Quadratic reference frame. Expressed
   *         in the qd_f_t format.
+  * @note 中文说明：设置 MC_SetCurrentReferenceMotor1_F 对应的控制参数、目标值或外设配置。
   */
 __weak void MC_SetCurrentReferenceMotor1_F(qd_f_t IqdRef)
 {
@@ -343,6 +352,7 @@ __weak void MC_SetCurrentReferenceMotor1_F(qd_f_t IqdRef)
   *   In this case calling this function resets the command state to #MCI_BUFFER_EMPTY.
   * - #MCI_COMMAND_EXECUTED_UNSUCCESSFULLY: the buffered command has been executed unsuccessfully.
   *   In this case calling this function resets the command state to #MCI_BUFFER_EMPTY.
+  * @note 中文说明：获取 MC_GetCommandStateMotor1 对应的状态、配置或计算结果。
   */
 __weak MCI_CommandState_t  MC_GetCommandStateMotor1(void)
 {
@@ -358,6 +368,7 @@ __weak MCI_CommandState_t  MC_GetCommandStateMotor1(void)
  *
  * @deprecated This function is deprecated and should not be used anymore. It will be
  *             removed in a future version of the MCSDK. Use MC_StopRampMotor1() instead.
+ * @note 中文说明：停止或禁用 MC_StopSpeedRampMotor1 对应的外设与控制流程。
  */
 __weak bool MC_StopSpeedRampMotor1(void)
 {
@@ -369,6 +380,7 @@ __weak bool MC_StopSpeedRampMotor1(void)
  *
  *  If a ramp is currently being executed, it is immediately stopped, the torque or the speed
  *  of Motor 1 is maintained to its current value.
+ * @note 中文说明：停止或禁用 MC_StopRampMotor1 对应的外设与控制流程。
  */
 __weak void MC_StopRampMotor1(void)
 {
@@ -377,6 +389,7 @@ __weak void MC_StopRampMotor1(void)
 
 /**
  * @brief Returns true if the last ramp submited for Motor 1 has completed, false otherwise
+ * @note 中文说明：检查 MC_HasRampCompletedMotor1 对应的状态、故障或完成条件。
  */
 __weak bool MC_HasRampCompletedMotor1(void)
 {
@@ -385,6 +398,7 @@ __weak bool MC_HasRampCompletedMotor1(void)
 
 /**
  *  @brief Returns the current mechanical rotor speed reference set for Motor 1, expressed in the unit defined by #SPEED_UNIT
+ * @note 中文说明：获取 MC_GetMecSpeedReferenceMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetMecSpeedReferenceMotor1(void)
 {
@@ -393,6 +407,7 @@ __weak int16_t MC_GetMecSpeedReferenceMotor1(void)
 
 /**
  *  @brief Returns the current mechanical rotor speed reference set for Motor 1, expressed in rpm.
+ * @note 中文说明：获取 MC_GetMecSpeedReferenceMotor1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetMecSpeedReferenceMotor1_F(void)
 {
@@ -401,6 +416,7 @@ __weak float_t MC_GetMecSpeedReferenceMotor1_F(void)
 
 /**
  * @brief Returns the last computed average mechanical rotor speed for Motor 1, expressed in the unit defined by #SPEED_UNIT
+ * @note 中文说明：获取 MC_GetMecSpeedAverageMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetMecSpeedAverageMotor1(void)
 {
@@ -409,6 +425,7 @@ __weak int16_t MC_GetMecSpeedAverageMotor1(void)
 
 /**
  * @brief Returns the last computed average mechanical rotor speed for Motor 1, expressed in rpm.
+ * @note 中文说明：获取 MC_GetAverageMecSpeedMotor1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetAverageMecSpeedMotor1_F(void)
 {
@@ -417,6 +434,7 @@ __weak float_t MC_GetAverageMecSpeedMotor1_F(void)
 
 /**
  * @brief Returns the final speed of the last ramp programmed for Motor 1 if this ramp was a speed ramp, 0 otherwise.
+ * @note 中文说明：获取 MC_GetLastRampFinalSpeedMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetLastRampFinalSpeedMotor1(void)
 {
@@ -425,6 +443,7 @@ __weak int16_t MC_GetLastRampFinalSpeedMotor1(void)
 
 /**
  * @brief Returns the final speed of the last ramp programmed for Motor 1 if this ramp was a speed ramp, 0 otherwise.
+ * @note 中文说明：获取 MC_GetLastRampFinalSpeedM1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetLastRampFinalSpeedM1_F(void)
 {
@@ -432,6 +451,7 @@ __weak float_t MC_GetLastRampFinalSpeedM1_F(void)
 }
 /**
  * @brief Returns the final torque reference for Motor 1, expressed in Ampere.
+ * @note 中文说明：获取 MC_GetFinalTorqueReferenceMotor1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetFinalTorqueReferenceMotor1_F(void)
 {
@@ -440,6 +460,7 @@ __weak float_t MC_GetFinalTorqueReferenceMotor1_F(void)
 
 /**
  * @brief Returns the final torque reference for Motor 1, expressed in digit.
+ * @note 中文说明：获取 MC_GetFinalTorqueReferenceMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetFinalTorqueReferenceMotor1(void)
 {
@@ -447,6 +468,7 @@ __weak int16_t MC_GetFinalTorqueReferenceMotor1(void)
 }
 /**
  * @brief Returns the Control Mode used for Motor 1 (either Speed or Torque)
+ * @note 中文说明：获取 MC_GetControlModeMotor1 对应的状态、配置或计算结果。
  */
 __weak MC_ControlMode_t MC_GetControlModeMotor1(void)
 {
@@ -463,6 +485,7 @@ __weak MC_ControlMode_t MC_GetControlModeMotor1(void)
  * reference component of the last command is negative. Otherwise, 1 is returned.
  *
  * @note if no such command has ever been submitted, 1 is returned as well.
+ * @note 中文说明：获取 MC_GetImposedDirectionMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetImposedDirectionMotor1(void)
 {
@@ -471,6 +494,7 @@ __weak int16_t MC_GetImposedDirectionMotor1(void)
 
 /**
  * @brief Returns true if the speed sensor used for Motor 1 is reliable, false otherwise
+ * @note 中文说明：获取 MC_GetSpeedSensorReliabilityMotor1 对应的状态、配置或计算结果。
  */
 __weak bool MC_GetSpeedSensorReliabilityMotor1(void)
 {
@@ -486,6 +510,7 @@ __weak bool MC_GetSpeedSensorReliabilityMotor1(void)
  * I_{Amps} = \frac{ I_{s16A} \times V_{dd}}{ 65536 \times R_{shunt} \times A_{op} }
  * @f]
  *
+ * @note 中文说明：获取 MC_GetPhaseCurrentAmplitudeMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetPhaseCurrentAmplitudeMotor1(void)
 {
@@ -501,6 +526,7 @@ __weak int16_t MC_GetPhaseCurrentAmplitudeMotor1(void)
  * U_{Volts} = \frac{ U_{s16V} \times V_{bus}}{ \sqrt{3} \times 32768  }
  * @f]
  *
+ * @note 中文说明：获取 MC_GetPhaseVoltageAmplitudeMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetPhaseVoltageAmplitudeMotor1(void)
 {
@@ -509,6 +535,7 @@ __weak int16_t MC_GetPhaseVoltageAmplitudeMotor1(void)
 
 /**
  * @brief returns Ia and Ib current values for Motor 1 in ab_t format
+ * @note 中文说明：获取 MC_GetIabMotor1 对应的状态、配置或计算结果。
  */
 __weak ab_t MC_GetIabMotor1(void)
 {
@@ -517,6 +544,7 @@ __weak ab_t MC_GetIabMotor1(void)
 
 /**
  * @brief returns Ia and Ib current values for Motor 1 in ab_f_t format
+ * @note 中文说明：获取 MC_GetIabMotor1_F 对应的状态、配置或计算结果。
  */
 __weak ab_f_t MC_GetIabMotor1_F(void)
 {
@@ -525,6 +553,7 @@ __weak ab_f_t MC_GetIabMotor1_F(void)
 
 /**
  * @brief returns Ialpha and Ibeta current values for Motor 1 in alphabeta_t format
+ * @note 中文说明：获取 MC_GetIalphabetaMotor1 对应的状态、配置或计算结果。
  */
 __weak alphabeta_t MC_GetIalphabetaMotor1(void)
 {
@@ -533,6 +562,7 @@ __weak alphabeta_t MC_GetIalphabetaMotor1(void)
 
 /**
  * @brief returns Iq and Id current values for Motor 1 in qd_t format
+ * @note 中文说明：获取 MC_GetIqdMotor1 对应的状态、配置或计算结果。
  */
 __weak qd_t MC_GetIqdMotor1(void)
 {
@@ -541,6 +571,7 @@ __weak qd_t MC_GetIqdMotor1(void)
 
 /**
  * @brief returns Iq and Id current values for Motor 1 in float_t type
+ * @note 中文说明：获取 MC_GetIqdMotor1_F 对应的状态、配置或计算结果。
  */
 __weak qd_f_t MC_GetIqdMotor1_F(void)
 {
@@ -549,6 +580,7 @@ __weak qd_f_t MC_GetIqdMotor1_F(void)
 
 /**
  * @brief returns Iq and Id reference current values for Motor 1 in qd_t format
+ * @note 中文说明：获取 MC_GetIqdrefMotor1 对应的状态、配置或计算结果。
  */
 __weak qd_t MC_GetIqdrefMotor1(void)
 {
@@ -557,6 +589,7 @@ __weak qd_t MC_GetIqdrefMotor1(void)
 
 /**
  * @brief returns Iq and Id reference current values for Motor 1 in float_t type
+ * @note 中文说明：获取 MC_GetIqdrefMotor1_F 对应的状态、配置或计算结果。
  */
 __weak qd_f_t MC_GetIqdrefMotor1_F(void)
 {
@@ -565,6 +598,7 @@ __weak qd_f_t MC_GetIqdrefMotor1_F(void)
 
 /**
  * @brief returns Vq and Vd voltage values for Motor 1 in qd_t format
+ * @note 中文说明：获取 MC_GetVqdMotor1 对应的状态、配置或计算结果。
  */
 __weak qd_t MC_GetVqdMotor1(void)
 {
@@ -573,6 +607,7 @@ __weak qd_t MC_GetVqdMotor1(void)
 
 /**
  * @brief returns Valpha and Vbeta voltage values for Motor 1 in alphabeta_t format
+ * @note 中文说明：获取 MC_GetValphabetaMotor1 对应的状态、配置或计算结果。
  */
 __weak alphabeta_t MC_GetValphabetaMotor1(void)
 {
@@ -581,6 +616,7 @@ __weak alphabeta_t MC_GetValphabetaMotor1(void)
 
 /**
  * @brief returns the electrical angle of the rotor of Motor 1, in DDP format
+ * @note 中文说明：获取 MC_GetElAngledppMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetElAngledppMotor1(void)
 {
@@ -589,6 +625,7 @@ __weak int16_t MC_GetElAngledppMotor1(void)
 
 /**
  * @brief returns the electrical torque reference for Motor 1
+ * @note 中文说明：获取 MC_GetTerefMotor1 对应的状态、配置或计算结果。
  */
 __weak int16_t MC_GetTerefMotor1(void)
 {
@@ -597,6 +634,7 @@ __weak int16_t MC_GetTerefMotor1(void)
 
 /**
  * @brief returns the electrical torque reference for Motor 1
+ * @note 中文说明：获取 MC_GetTerefMotor1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetTerefMotor1_F(void)
 {
@@ -610,6 +648,7 @@ __weak float_t MC_GetTerefMotor1_F(void)
  * or the Torque controller depending on the control mode.
  *
  * @see   SpeednTorqCtrl for more details.
+ * @note 中文说明：清除或确认 MC_Clear_IqdrefMotor1 对应的状态与历史数据。
  */
 __weak void MC_Clear_IqdrefMotor1(void)
 {
@@ -623,6 +662,7 @@ __weak void MC_Clear_IqdrefMotor1(void)
  * the error condition that occured into account. If no error condition exists when
  * the function is called, nothing is done and false is returned. Otherwise, true is
  * returned.
+ * @note 中文说明：检查 MC_AcknowledgeFaultMotor1 对应的状态、故障或完成条件。
  */
 __weak bool MC_AcknowledgeFaultMotor1(void)
 {
@@ -637,6 +677,7 @@ __weak bool MC_AcknowledgeFaultMotor1(void)
  *
  * See @ref fault_codes "Motor Control Faults" for a list of
  * of all possible faults codes.
+ * @note 中文说明：获取 MC_GetOccurredFaultsMotor1 对应的状态、配置或计算结果。
  */
 __weak uint16_t MC_GetOccurredFaultsMotor1(void)
 {
@@ -651,6 +692,7 @@ __weak uint16_t MC_GetOccurredFaultsMotor1(void)
  *
  * See @ref fault_codes "Motor Control Faults" for a list of
  * of all possible faults codes.
+ * @note 中文说明：获取 MC_GetCurrentFaultsMotor1 对应的状态、配置或计算结果。
  */
 __weak uint16_t MC_GetCurrentFaultsMotor1(void)
 {
@@ -659,6 +701,7 @@ __weak uint16_t MC_GetCurrentFaultsMotor1(void)
 
 /**
  * @brief returns the current state of Motor 1 state machine
+ * @note 中文说明：获取 MC_GetSTMStateMotor1 对应的状态、配置或计算结果。
  */
 __weak MCI_State_t MC_GetSTMStateMotor1(void)
 {
@@ -697,6 +740,7 @@ __weak MCI_State_t MC_GetSTMStateMotor1(void)
   * is set to #COMPLETED. See MC_GetPolarizationState().
   *
   * @param PolarizationOffsets pointer on the structure containing the offset values
+  * @note 中文说明：设置 MC_SetPolarizationOffsetsMotor1 对应的控制参数、目标值或外设配置。
   */
 bool MC_SetPolarizationOffsetsMotor1(PolarizationOffsets_t * PolarizationOffsets)
 {
@@ -716,6 +760,7 @@ bool MC_SetPolarizationOffsetsMotor1(PolarizationOffsets_t * PolarizationOffsets
   *        copied
   * @return #MC_SUCCESS if calibration data were present and could be copied into @p PolarizationOffsets,
   *         #MC_NO_POLARIZATION_OFFSETS_ERROR otherwise.
+  * @note 中文说明：获取 MC_GetPolarizationOffsetsMotor1 对应的状态、配置或计算结果。
   */
 bool MC_GetPolarizationOffsetsMotor1(PolarizationOffsets_t * PolarizationOffsets)
 {
@@ -736,6 +781,7 @@ bool MC_GetPolarizationOffsetsMotor1(PolarizationOffsets_t * PolarizationOffsets
   * function to query the state of the procedure.
   *
   * @see MC_GetPolarizationState()
+  * @note 中文说明：启动或使能 MC_StartPolarizationOffsetsMeasurementMotor1 对应的外设与控制流程。
   */
 bool MC_StartPolarizationOffsetsMeasurementMotor1(void)
 {
@@ -747,6 +793,7 @@ bool MC_StartPolarizationOffsetsMeasurementMotor1(void)
  *        expressed in watt for Motor 1.
 
  * @retval float_t The average measured motor power expressed in watt.
+ * @note 中文说明：获取 MC_GetAveragePowerMotor1_F 对应的状态、配置或计算结果。
  */
 __weak float_t MC_GetAveragePowerMotor1_F(void)
 {
@@ -755,7 +802,8 @@ __weak float_t MC_GetAveragePowerMotor1_F(void)
 
 /**
  * @brief returns the current control position state of Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetControlPositionStatusMotor1 对应的状态、配置或计算结果。
+ */
 __weak PosCtrlStatus_t MC_GetControlPositionStatusMotor1(void)
 {
   return (MCI_GetCtrlPositionState(pMCI[M1]));
@@ -763,7 +811,8 @@ __weak PosCtrlStatus_t MC_GetControlPositionStatusMotor1(void)
 
 /**
  * @brief returns the alignment state of Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetAlignmentStatusMotor1 对应的状态、配置或计算结果。
+ */
 __weak AlignStatus_t MC_GetAlignmentStatusMotor1(void)
 {
   return (MCI_GetAlignmentStatus(pMCI[M1]));
@@ -771,7 +820,8 @@ __weak AlignStatus_t MC_GetAlignmentStatusMotor1(void)
 
 /**
  * @brief returns the current position of Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetCurrentPosition1 对应的状态、配置或计算结果。
+ */
 __weak float_t MC_GetCurrentPosition1(void)
 {
   return (MCI_GetCurrentPosition(pMCI[M1]));
@@ -779,7 +829,8 @@ __weak float_t MC_GetCurrentPosition1(void)
 
 /**
  * @brief returns the target position of Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetTargetPosition1 对应的状态、配置或计算结果。
+ */
 __weak float_t MC_GetTargetPosition1(void)
 {
   return (MCI_GetTargetPosition(pMCI[M1]));
@@ -787,7 +838,8 @@ __weak float_t MC_GetTargetPosition1(void)
 
 /**
  * @brief returns the total movement duration to reach the target position of Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetMoveDuration1 对应的状态、配置或计算结果。
+ */
 __weak float_t MC_GetMoveDuration1(void)
 {
   return (MCI_GetMoveDuration(pMCI[M1]));
@@ -795,7 +847,8 @@ __weak float_t MC_GetMoveDuration1(void)
 
 /**
  * @brief returns the current estimated angle of the Motor 1.
- *   */
+ * @note 中文说明：获取 MC_GetCtrlPositionAngle1 对应的状态、配置或计算结果。
+ */
 __weak float_t MC_GetCtrlPositionAngle1(void)
 {
   return (MCI_GetCtrlPositionAngle(pMCI[M1]));
@@ -804,7 +857,8 @@ __weak float_t MC_GetCtrlPositionAngle1(void)
 /**
  * @brief sets the current estimated anglular position of the Motor 1.
  * @param  fCurrentPosition current mechanical angular position (in radian).
- *   */
+ * @note 中文说明：设置 MC_SetCtrlPositionAngle1 对应的控制参数、目标值或外设配置。
+ */
 __weak void MC_SetCtrlPositionAngle1(float_t fCurrentPosition)
 {
   MCI_SetCtrlPositionAngle(pMCI[M1], fCurrentPosition);
@@ -813,6 +867,7 @@ __weak void MC_SetCtrlPositionAngle1(float_t fCurrentPosition)
 /**
  * @brief Not implemented MC_Profiler function.
  *  */ //cstat !MISRAC2012-Rule-2.7 !RED-unused-param  !MISRAC2012-Rule-2.7  !MISRAC2012-Rule-8.13
+/** @brief 执行 MC_ProfilerCommand 对应的模块功能。 */
 __weak uint8_t MC_ProfilerCommand(uint16_t rxLength, uint8_t *rxBuffer, int16_t txSyncFreeSpace, uint16_t *txLength, uint8_t *txBuffer)
 {
   (void)rxLength;

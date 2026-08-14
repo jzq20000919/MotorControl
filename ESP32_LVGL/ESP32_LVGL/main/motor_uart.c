@@ -12,7 +12,7 @@
 #include "freertos/task.h"
 
 #define MOTOR_UART_PORT                 UART_NUM_1
-/* Port2 is dedicated to the UART link. Port1 (GPIO5/6) is reserved for CAN. */
+/* PORT2 专用于 UART 链路；PORT1（GPIO5/6）保留给 CAN 使用。 */
 #define MOTOR_UART_TX_GPIO              GPIO_NUM_18
 #define MOTOR_UART_RX_GPIO              GPIO_NUM_8
 #define MOTOR_UART_RX_BUFFER_SIZE       (1024U)
@@ -26,7 +26,7 @@ typedef struct
 {
     MotorUart_Command_t command;
     int32_t value;
-} motor_uart_request_t;
+} motor_uart_request_t;//串口命令回复
 
 typedef struct
 {
@@ -61,9 +61,9 @@ static uint32_t motor_uart_now_ms(void)
 
 /**
  * @brief 计算协议使用的 CRC-16/Modbus 校验和。
- * @param data First byte to protect.
- * @param length Number of protected bytes.
- * @return CRC with initial value 0xFFFF and polynomial 0xA001.
+ * @param data 参与校验的数据首地址。
+ * @param length 参与校验的字节数。
+ * @return 使用初值 0xFFFF 和多项式 0xA001 计算得到的 CRC。
  */
 static uint16_t motor_uart_crc16(const uint8_t *data, uint16_t length)
 {
@@ -85,9 +85,8 @@ static uint16_t motor_uart_crc16(const uint8_t *data, uint16_t length)
 /**
  * @brief 在 UART RX 任务上下文中应用待执行的波特率变更。
  *
- * The RX task owns the parser, so flushing input and clearing parser state here
- * cannot race with byte parsing. TX observes snapshot.reconnecting and pauses
- * normal command traffic while the hardware divider is changed.
+ * RX 任务独占解析器，因此在此处刷新输入和清除解析状态不会与字节解析竞争。
+ * 更改硬件分频器期间，TX 任务通过 snapshot.reconnecting 暂停正常命令发送。
  */
 static void motor_uart_apply_reconnect(void)
 {
@@ -103,9 +102,8 @@ static void motor_uart_apply_reconnect(void)
     portEXIT_CRITICAL(&s_lock);
 
     /*
-     * The RX task owns the parser, so resetting it here cannot race with byte
-     * parsing. The TX task is held by snapshot.reconnecting while the UART
-     * divider and buffers are changed.
+     * RX 任务独占解析器，因此在此处复位解析器不会与字节解析竞争。
+     * 更改 UART 分频器和缓冲区期间，snapshot.reconnecting 会暂停 TX 任务。
      */
     (void)uart_wait_tx_done(MOTOR_UART_PORT, pdMS_TO_TICKS(20));
     const esp_err_t result =
@@ -126,34 +124,26 @@ static void motor_uart_apply_reconnect(void)
         s_force_ping = true;
         portEXIT_CRITICAL(&s_lock);
 
-        ESP_LOGI(
-            TAG,
-            "UART reconnected at %lu baud",
-            (unsigned long)baud_rate);
+        ESP_LOGI(TAG, "UART reconnected at %lu baud", (unsigned long)baud_rate);
     } else {
         portENTER_CRITICAL(&s_lock);
         s_snapshot.link_active = false;
         s_snapshot.reconnecting = false;
         s_snapshot.reconnect_errors++;
         portEXIT_CRITICAL(&s_lock);
-        ESP_LOGE(
-            TAG,
-            "UART reconnect at %lu baud failed: %s",
-            (unsigned long)baud_rate,
-            esp_err_to_name(result));
+        ESP_LOGE(TAG, "UART reconnect at %lu baud failed: %s", (unsigned long)baud_rate, esp_err_to_name(result));
     }
 }
 
 /**
  * @brief 编码并发送一帧完整的 UART 协议命令帧。
  *
- * Non-diagnostic commands require this transport to hold control authority.
- * Frame counters are updated under the module critical section; the UART
- * driver's own transmit buffer handles the physical write asynchronously.
+ * 非诊断命令要求当前传输通道持有控制权。帧计数器在模块临界区内更新，
+ * 实际物理发送由 UART 驱动自身的发送缓冲区异步完成。
  *
- * @param command Command opcode defined by motor_uart_protocol.h.
- * @param value Signed command value encoded little-endian in the payload.
- * @return ESP_OK when the complete frame was accepted by the UART driver.
+ * @param command motor_uart_protocol.h 中定义的命令操作码。
+ * @param value 以小端序编码到负载中的有符号命令值。
+ * @return UART 驱动接受完整帧时返回 ESP_OK，否则返回驱动错误码。
  */
 static esp_err_t motor_uart_transmit(
     MotorUart_Command_t command,
@@ -184,13 +174,10 @@ static esp_err_t motor_uart_transmit(
     frame[5] = MOTOR_UART_COMMAND_PAYLOAD_SIZE;
     frame[6] = (uint8_t)command;
     MotorUart_WriteS32(&frame[7], value);
-    crc = motor_uart_crc16(
-        &frame[2], 4U + MOTOR_UART_COMMAND_PAYLOAD_SIZE);
-    MotorUart_WriteU16(
-        &frame[6U + MOTOR_UART_COMMAND_PAYLOAD_SIZE], crc);
+    crc = motor_uart_crc16(&frame[2], 4U + MOTOR_UART_COMMAND_PAYLOAD_SIZE);
+    MotorUart_WriteU16(&frame[6U + MOTOR_UART_COMMAND_PAYLOAD_SIZE], crc);
 
-    written = uart_write_bytes(
-        MOTOR_UART_PORT, frame, sizeof(frame));
+    written = uart_write_bytes(MOTOR_UART_PORT, frame, sizeof(frame));
     if (written != (int)sizeof(frame)) {
         portENTER_CRITICAL(&s_lock);
         s_snapshot.transmit_errors++;
@@ -206,12 +193,11 @@ static esp_err_t motor_uart_transmit(
 /**
  * @brief 将离散控制命令放入有长度限制的 TX 命令队列。
  *
- * When full, the oldest queued command is discarded. For HMI-generated
- * targets this "latest request wins" behaviour is preferable to delaying a
- * recently selected mode behind stale user actions.
+ * 队列已满时丢弃最旧命令。对于 HMI 产生的目标请求，“最新请求优先”可避免
+ * 新选择的模式被过时用户操作延迟。
  *
- * @param command Command opcode to enqueue.
- * @param value Associated command value.
+ * @param command 需要入队的命令操作码。
+ * @param value 与命令关联的参数值。
  */
 static void motor_uart_queue_control(
     MotorUart_Command_t command,
@@ -231,8 +217,8 @@ static void motor_uart_queue_control(
 
 /**
  * @brief 将已校验的遥测负载解码到共享 UART 状态快照。
- * @param payload Payload bytes following a UART telemetry frame header.
- * @param length Payload length; only the exact protocol telemetry size is used.
+ * @param payload UART 遥测帧头之后的负载数据。
+ * @param length 负载长度；仅与协议规定遥测长度完全一致时才进行解析。
  */
 static void motor_uart_parse_telemetry(
     const uint8_t *payload,
@@ -280,11 +266,10 @@ static void motor_uart_parse_telemetry(
 /**
  * @brief 将一个接收字节送入流式 UART 帧解析器。
  *
- * UART reads are not frame-aligned, so this state machine finds the two-byte
- * start marker, validates length and CRC, then dispatches only valid telemetry.
- * Parser state is owned exclusively by the RX task.
+ * UART 读取操作不保证按帧对齐，因此该状态机负责查找双字节起始标记、校验
+ * 长度和 CRC，并且只分发有效遥测。解析器状态由 RX 任务独占。
  *
- * @param byte Newly received serial byte.
+ * @param byte 新接收到的串口字节。
  */
 static void motor_uart_parse_byte(uint8_t byte)
 {
@@ -331,10 +316,8 @@ static void motor_uart_parse_byte(uint8_t byte)
         return;
     }
 
-    received_crc = MotorUart_ReadU16(
-        &s_parser.buffer[6U + payload_length]);
-    calculated_crc = motor_uart_crc16(
-        &s_parser.buffer[2], (uint16_t)(4U + payload_length));
+    received_crc = MotorUart_ReadU16(&s_parser.buffer[6U + payload_length]);
+    calculated_crc = motor_uart_crc16(&s_parser.buffer[2], (uint16_t)(4U + payload_length));
 
     if (received_crc != calculated_crc) {
         portENTER_CRITICAL(&s_lock);
@@ -343,8 +326,7 @@ static void motor_uart_parse_byte(uint8_t byte)
     } else if (
         s_parser.buffer[2] == MOTOR_UART_PROTOCOL_VERSION &&
         s_parser.buffer[3] == MOTOR_UART_FRAME_TELEMETRY) {
-        motor_uart_parse_telemetry(
-            &s_parser.buffer[6], payload_length);
+        motor_uart_parse_telemetry(&s_parser.buffer[6], payload_length);
     } else {
         portENTER_CRITICAL(&s_lock);
         s_snapshot.protocol_errors++;
@@ -355,8 +337,8 @@ static void motor_uart_parse_byte(uint8_t byte)
 
 /**
  * @brief 接收 UART 字节、解析遥测并检测超时的 FreeRTOS 任务。
- * @param argument Unused task argument.
- * @note This is the sole owner of s_parser and performs pending reconnects.
+ * @param argument 未使用的任务参数。
+ * @note 此任务独占 s_parser，并负责执行待处理的重连请求。
  */
 static void motor_uart_rx_task(void *argument)
 {
@@ -366,11 +348,7 @@ static void motor_uart_rx_task(void *argument)
     while (true) {
         motor_uart_apply_reconnect();
 
-        const int count = uart_read_bytes(
-            MOTOR_UART_PORT,
-            received,
-            sizeof(received),
-            pdMS_TO_TICKS(10));
+        const int count = uart_read_bytes(MOTOR_UART_PORT, received, sizeof(received), pdMS_TO_TICKS(10));
         if (count > 0) {
             portENTER_CRITICAL(&s_lock);
             s_snapshot.received_bytes += (uint32_t)count;
@@ -393,11 +371,10 @@ static void motor_uart_rx_task(void *argument)
 /**
  * @brief 周期发送排队命令、最新目标和 Ping 的 FreeRTOS 任务。
  *
- * Discrete requests are sent first, then at most one newest position and speed
- * target per period. The fixed vTaskDelayUntil schedule avoids a busy loop and
- * gives the link a predictable command cadence.
+ * 每个周期先发送离散请求，再分别最多发送一个最新位置和速度目标。固定的
+ * vTaskDelayUntil 调度可避免忙循环，并使链路命令发送节奏保持可预测。
  *
- * @param argument Unused task argument.
+ * @param argument 未使用的任务参数。
  */
 static void motor_uart_tx_task(void *argument)
 {
@@ -416,17 +393,13 @@ static void motor_uart_tx_task(void *argument)
         control_enabled = s_control_enabled;
         portEXIT_CRITICAL(&s_lock);
         if (reconnecting) {
-            vTaskDelayUntil(
-                &last_wake,
-                pdMS_TO_TICKS(MOTOR_UART_TX_TASK_PERIOD_MS));
+            vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_UART_TX_TASK_PERIOD_MS));
             continue;
         }
 
         while (control_enabled && budget-- > 0U &&
-               xQueueReceive(
-                   s_control_queue, &request, 0) == pdTRUE) {
-            (void)motor_uart_transmit(
-                request.command, request.value);
+               xQueueReceive(s_control_queue, &request, 0) == pdTRUE) {
+            (void)motor_uart_transmit(request.command, request.value);
         }
 
         bool send_position;
@@ -443,12 +416,10 @@ static void motor_uart_tx_task(void *argument)
         portEXIT_CRITICAL(&s_lock);
 
         if (send_position) {
-            (void)motor_uart_transmit(
-                MOTOR_UART_CMD_SET_POSITION_CDEG, position);
+            (void)motor_uart_transmit(MOTOR_UART_CMD_SET_POSITION_CDEG, position);
         }
         if (send_speed) {
-            (void)motor_uart_transmit(
-                MOTOR_UART_CMD_SET_SPEED_RPM, speed);
+            (void)motor_uart_transmit(MOTOR_UART_CMD_SET_SPEED_RPM, speed);
         }
 
         const uint32_t now = motor_uart_now_ms();
@@ -462,16 +433,14 @@ static void motor_uart_tx_task(void *argument)
             (void)motor_uart_transmit(MOTOR_UART_CMD_PING, 0);
         }
 
-        vTaskDelayUntil(
-            &last_wake,
-            pdMS_TO_TICKS(MOTOR_UART_TX_TASK_PERIOD_MS));
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_UART_TX_TASK_PERIOD_MS));
     }
 }
 
 /**
  * @brief 安装 UART1 驱动并启动协议 RX/TX 任务。
- * @return ESP_OK when driver, queue and both tasks are ready; ESP_ERR_NO_MEM
- *         if required FreeRTOS objects cannot be created.
+ * @return 驱动、队列及两个任务均就绪时返回 ESP_OK；所需 FreeRTOS 对象
+ *         创建失败时返回 ESP_ERR_NO_MEM。
  */
 esp_err_t motor_uart_init(void)
 {
@@ -491,55 +460,18 @@ esp_err_t motor_uart_init(void)
     s_control_enabled = false;
     s_snapshot.mode = MOTOR_UART_MODE_SPEED;
     s_snapshot.baud_rate = MOTOR_UART_BAUD_RATE;
-    s_control_queue = xQueueCreate(
-        MOTOR_UART_CONTROL_QUEUE_SIZE,
-        sizeof(motor_uart_request_t));
+    s_control_queue = xQueueCreate(MOTOR_UART_CONTROL_QUEUE_SIZE, sizeof(motor_uart_request_t));
     if (s_control_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_RETURN_ON_ERROR(
-        uart_driver_install(
-            MOTOR_UART_PORT,
-            MOTOR_UART_RX_BUFFER_SIZE,
-            MOTOR_UART_TX_BUFFER_SIZE,
-            0,
-            NULL,
-            0),
-        TAG,
-        "uart_driver_install failed");
-    ESP_RETURN_ON_ERROR(
-        uart_param_config(MOTOR_UART_PORT, &config),
-        TAG,
-        "uart_param_config failed");
-    ESP_RETURN_ON_ERROR(
-        uart_set_pin(
-            MOTOR_UART_PORT,
-            MOTOR_UART_TX_GPIO,
-            MOTOR_UART_RX_GPIO,
-            UART_PIN_NO_CHANGE,
-            UART_PIN_NO_CHANGE),
-        TAG,
-        "uart_set_pin failed");
-    ESP_RETURN_ON_ERROR(
-        uart_flush_input(MOTOR_UART_PORT),
-        TAG,
-        "uart_flush_input failed");
+    ESP_RETURN_ON_ERROR(uart_driver_install( MOTOR_UART_PORT, MOTOR_UART_RX_BUFFER_SIZE, MOTOR_UART_TX_BUFFER_SIZE, 0, NULL, 0), TAG, "uart_driver_install failed");
+    ESP_RETURN_ON_ERROR(uart_param_config(MOTOR_UART_PORT, &config), TAG, "uart_param_config failed");
+    ESP_RETURN_ON_ERROR(uart_set_pin( MOTOR_UART_PORT, MOTOR_UART_TX_GPIO, MOTOR_UART_RX_GPIO, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG, "uart_set_pin failed");
+    ESP_RETURN_ON_ERROR(uart_flush_input(MOTOR_UART_PORT), TAG, "uart_flush_input failed");
 
-    if (xTaskCreate(
-            motor_uart_rx_task,
-            "motor_uart_rx",
-            3072,
-            NULL,
-            8,
-            &s_rx_task) != pdPASS ||
-        xTaskCreate(
-            motor_uart_tx_task,
-            "motor_uart_tx",
-            3072,
-            NULL,
-            8,
-            &s_tx_task) != pdPASS) {
+    if (xTaskCreate(motor_uart_rx_task, "motor_uart_rx", 3072, NULL, 8, &s_rx_task) != pdPASS ||
+        xTaskCreate(motor_uart_tx_task, "motor_uart_tx", 3072, NULL, 8, &s_tx_task) != pdPASS) {
         if (s_rx_task != NULL) {
             vTaskDelete(s_rx_task);
             s_rx_task = NULL;
@@ -556,18 +488,13 @@ esp_err_t motor_uart_init(void)
 
     s_initialized = true;
 
-    ESP_LOGI(
-        TAG,
-        "USART link ready: TX GPIO%d, RX GPIO%d, %lu baud",
-        MOTOR_UART_TX_GPIO,
-        MOTOR_UART_RX_GPIO,
-        (unsigned long)MOTOR_UART_BAUD_RATE);
+    ESP_LOGI(TAG, "USART link ready: TX GPIO%d, RX GPIO%d, %lu baud", MOTOR_UART_TX_GPIO, MOTOR_UART_RX_GPIO, (unsigned long)MOTOR_UART_BAUD_RATE);
     return ESP_OK;
 }
 
 /**
  * @brief 停止 UART 任务并释放 UART 独占资源。
- * @note Call only after higher layers have revoked UART control authority.
+ * @note 仅应在上层撤销 UART 控制权后调用。
  */
 void motor_uart_deinit(void)
 {
@@ -602,8 +529,8 @@ bool motor_uart_is_initialized(void)
 
 /**
  * @brief 标记一个由 RX 任务执行的 UART 波特率更新请求。
- * @param baud_rate New non-zero UART bit rate.
- * @return ESP_ERR_INVALID_ARG for zero; otherwise ESP_OK when queued.
+ * @param baud_rate 新的非零 UART 波特率。
+ * @return 波特率为零时返回 ESP_ERR_INVALID_ARG；成功记录请求时返回 ESP_OK。
  */
 esp_err_t motor_uart_request_reconnect(uint32_t baud_rate)
 {
@@ -622,7 +549,7 @@ esp_err_t motor_uart_request_reconnect(uint32_t baud_rate)
 
 /**
  * @brief 为 UI/网络读者复制最新遥测和诊断信息。
- * @param[out] snapshot Destination; NULL is ignored.
+ * @param[out] snapshot 接收状态的目标对象；传入 NULL 时忽略。
  */
 void motor_uart_get_snapshot(motor_uart_snapshot_t *snapshot)
 {
@@ -637,10 +564,10 @@ void motor_uart_get_snapshot(motor_uart_snapshot_t *snapshot)
 /**
  * @brief 授予或撤销 UART 链路发送电机命令的控制权。
  *
- * Revocation clears unsent continuous targets and control requests so an old
- * UART selection cannot act after CAN becomes the active transport.
+ * 撤销控制权时清除尚未发送的连续目标和控制请求，防止 CAN 成为活动通道后，
+ * 旧的 UART 选择仍继续影响电机。
  *
- * @param enabled True when UART owns control authority.
+ * @param enabled UART 获得控制权时传入 true，撤销时传入 false。
  */
 void motor_uart_set_control_enabled(bool enabled)
 {

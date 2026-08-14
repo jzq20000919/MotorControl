@@ -45,6 +45,7 @@ MCI_Handle_t* pMCI[NBR_OF_MOTORS];
  *
  * CubeMX calls this function after all peripherals initializations and
  * before the NVIC is configured
+ * @note 中文说明：初始化 MX_MotorControl_Init 所属模块、外设或运行状态。
  */
 __weak void MX_MotorControl_Init(void)
 {

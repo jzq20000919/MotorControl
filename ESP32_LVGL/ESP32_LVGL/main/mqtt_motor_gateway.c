@@ -47,9 +47,9 @@ static int32_t mqtt_gateway_clamp_i32(
 
 /**
  * @brief 为一次远程控制请求发布 JSON 确认消息。
- * @param command_id Client-provided correlation ID, or zero when absent.
- * @param accepted True when the command passed gateway validation.
- * @param message Short diagnostic message included in the JSON payload.
+ * @param command_id 客户端提供的关联 ID；未提供时为零。
+ * @param accepted 命令通过网关校验时为 true，否则为 false。
+ * @param message 写入 JSON 负载的简短诊断消息。
  */
 static void mqtt_gateway_publish_ack(
     uint32_t command_id,
@@ -57,19 +57,13 @@ static void mqtt_gateway_publish_ack(
     const char *message)
 {
     char payload[192];
-    snprintf(
-        payload,
-        sizeof(payload),
-        "{\"id\":%lu,\"ok\":%s,\"message\":\"%s\"}",
-        (unsigned long)command_id,
-        accepted ? "true" : "false",
-        message != NULL ? message : "");
+    snprintf(payload, sizeof(payload), "{\"id\":%lu,\"ok\":%s,\"message\":\"%s\"}", (unsigned long)command_id, accepted ? "true" : "false", message != NULL ? message : "");
     (void)mqtt_manager_publish(MQTT_MOTOR_ACK_TOPIC, payload);
 }
 
 /**
  * @brief 在允许影响电机的命令前验证 STM32 链路在线。
- * @return True when the current motor_link snapshot is live.
+ * @return 当前 motor_link 快照表示链路在线时返回 true。
  */
 static bool mqtt_gateway_require_link(
     const motor_link_snapshot_t *snapshot,
@@ -84,7 +78,7 @@ static bool mqtt_gateway_require_link(
 
 /**
  * @brief 从网关约束的 JSON 格式中提取简单整数字段。
- * @return True when @p key exists and parses as a base-10 signed integer.
+ * @return @p key 存在且能够解析为十进制有符号整数时返回 true。
  */
 static bool mqtt_gateway_json_int(
     const char *json,
@@ -116,7 +110,7 @@ static bool mqtt_gateway_json_int(
 
 /**
  * @brief 从网关约束的 JSON 格式中提取简单带引号字符串字段。
- * @return True when @p key exists and its value fits in the destination buffer.
+ * @return @p key 存在且字段值能够完整写入目标缓冲区时返回 true。
  */
 static bool mqtt_gateway_json_string(
     const char *json,
@@ -160,9 +154,9 @@ static bool mqtt_gateway_json_string(
 /**
  * @brief 校验远程 JSON 命令，并映射为 motor_link API 调用。
  *
- * This is intentionally the only MQTT path that can issue motor actions. It
- * enforces link availability, clamps speed and normalises angular targets.
- * @param payload Complete null-terminated JSON command message.
+ * 此处被有意设计为唯一能够通过 MQTT 发出电机动作的路径；它会检查链路是否
+ * 可用、限制速度范围并对角度目标进行归一化。
+ * @param payload 以空字符结尾的完整 JSON 命令消息。
  */
 static void mqtt_gateway_process_command(const char *payload)
 {
@@ -174,8 +168,7 @@ static void mqtt_gateway_process_command(const char *payload)
     (void)mqtt_gateway_json_int(payload, "id", &id_value);
     const uint32_t command_id = id_value > 0 ? (uint32_t)id_value : 0U;
 
-    if (!mqtt_gateway_json_string(
-            payload, "cmd", command, sizeof(command))) {
+    if (!mqtt_gateway_json_string(payload, "cmd", command, sizeof(command))) {
         mqtt_gateway_publish_ack(command_id, false, "Missing command");
         return;
     }
@@ -188,28 +181,19 @@ static void mqtt_gateway_process_command(const char *payload)
         if (snapshot.transport == MOTOR_LINK_NONE) {
             result = motor_link_connect_uart(MQTT_GATEWAY_DEFAULT_UART_BAUD);
         }
-        mqtt_gateway_publish_ack(
-            command_id,
-            result == ESP_OK,
-            result == ESP_OK ? "Gateway ready" : "UART activation failed");
+        mqtt_gateway_publish_ack(command_id, result == ESP_OK, result == ESP_OK ? "Gateway ready" : "UART activation failed");
     } else if (strcmp(command, "set_mode") == 0) {
         if (!has_value) {
             mqtt_gateway_publish_ack(command_id, false, "Missing mode value");
         } else if (mqtt_gateway_require_link(&snapshot, command_id)) {
-            motor_link_set_mode(
-                value == 0
-                    ? MOTOR_LINK_MODE_SPEED
-                    : MOTOR_LINK_MODE_POSITION);
+            motor_link_set_mode(value == 0 ? MOTOR_LINK_MODE_SPEED : MOTOR_LINK_MODE_POSITION);
             mqtt_gateway_publish_ack(command_id, true, "Mode accepted");
         }
     } else if (strcmp(command, "set_speed") == 0) {
         if (!has_value) {
             mqtt_gateway_publish_ack(command_id, false, "Missing speed value");
         } else if (mqtt_gateway_require_link(&snapshot, command_id)) {
-            const int32_t speed = mqtt_gateway_clamp_i32(
-                value,
-                -MQTT_GATEWAY_SPEED_LIMIT_RPM,
-                MQTT_GATEWAY_SPEED_LIMIT_RPM);
+            const int32_t speed = mqtt_gateway_clamp_i32(value, -MQTT_GATEWAY_SPEED_LIMIT_RPM, MQTT_GATEWAY_SPEED_LIMIT_RPM);
             motor_link_set_mode(MOTOR_LINK_MODE_SPEED);
             motor_link_set_speed_rpm((int16_t)speed);
             mqtt_gateway_publish_ack(command_id, true, "Speed accepted");
@@ -255,9 +239,8 @@ static void mqtt_gateway_process_command(const char *payload)
 /**
  * @brief MQTT 回调：将控制消息复制到网关工作队列。
  *
- * The callback never drives motor_link directly because it runs in MQTT event
- * context. When the queue is full, the oldest request is dropped in favour of
- * the newest operator command.
+ * 此回调运行在 MQTT 事件上下文中，因此不会直接操作 motor_link。队列已满时
+ * 丢弃最旧请求，以优先保留操作者的最新命令。
  */
 static void mqtt_gateway_message_callback(
     const char *topic,
@@ -289,49 +272,13 @@ static void mqtt_gateway_publish_telemetry(void)
     motor_link_get_snapshot(&snapshot);
 
     char payload[512];
-    snprintf(
-        payload,
-        sizeof(payload),
-        "{\"version\":1,\"transport\":%u,\"uart_online\":%s,"
-        "\"can_online\":%s,\"link_active\":%s,\"running\":%s,"
-        "\"motor_fault\":%s,\"command_rejected\":%s,\"mode\":%u,"
-        "\"faults\":%u,\"speed_rpm\":%d,\"speed_ref_rpm\":%d,"
-        "\"position_cdeg\":%u,\"target_cdeg\":%u,"
-        "\"position_error_cdeg\":%d,\"iq_ma\":%d,\"id_ma\":%d,"
-        "\"iq_ref_ma\":%d,\"id_ref_ma\":%d,\"uq_mv\":%d,"
-        "\"ud_mv\":%d,\"rx_frames\":%lu,\"tx_frames\":%lu,"
-        "\"tx_errors\":%lu}",
-        (unsigned)snapshot.transport,
-        snapshot.uart_link_active ? "true" : "false",
-        snapshot.can_link_active ? "true" : "false",
-        snapshot.link_active ? "true" : "false",
-        snapshot.motor_running ? "true" : "false",
-        snapshot.motor_fault ? "true" : "false",
-        snapshot.command_rejected ? "true" : "false",
-        (unsigned)snapshot.mode,
-        (unsigned)snapshot.faults,
-        snapshot.measured_speed_rpm,
-        snapshot.reference_speed_rpm,
-        (unsigned)snapshot.current_position_cdeg,
-        (unsigned)snapshot.target_position_cdeg,
-        snapshot.position_error_cdeg,
-        snapshot.iq_ma,
-        snapshot.id_ma,
-        snapshot.iq_reference_ma,
-        snapshot.id_reference_ma,
-        snapshot.uq_mv,
-        snapshot.ud_mv,
-        (unsigned long)snapshot.received_frames,
-        (unsigned long)snapshot.transmitted_frames,
-        (unsigned long)snapshot.transmit_errors);
-    (void)mqtt_manager_publish_qos0(
-        MQTT_MOTOR_TELEMETRY_TOPIC,
-        payload);
+    snprintf(payload, sizeof(payload), "{\"version\":1,\"transport\":%u,\"uart_online\":%s," "\"can_online\":%s,\"link_active\":%s,\"running\":%s," "\"motor_fault\":%s,\"command_rejected\":%s,\"mode\":%u," "\"faults\":%u,\"speed_rpm\":%d,\"speed_ref_rpm\":%d," "\"position_cdeg\":%u,\"target_cdeg\":%u," "\"position_error_cdeg\":%d,\"iq_ma\":%d,\"id_ma\":%d," "\"iq_ref_ma\":%d,\"id_ref_ma\":%d,\"uq_mv\":%d," "\"ud_mv\":%d,\"rx_frames\":%lu,\"tx_frames\":%lu," "\"tx_errors\":%lu}", (unsigned)snapshot.transport, snapshot.uart_link_active ? "true" : "false", snapshot.can_link_active ? "true" : "false", snapshot.link_active ? "true" : "false", snapshot.motor_running ? "true" : "false", snapshot.motor_fault ? "true" : "false", snapshot.command_rejected ? "true" : "false", (unsigned)snapshot.mode, (unsigned)snapshot.faults, snapshot.measured_speed_rpm, snapshot.reference_speed_rpm, (unsigned)snapshot.current_position_cdeg, (unsigned)snapshot.target_position_cdeg, snapshot.position_error_cdeg, snapshot.iq_ma, snapshot.id_ma, snapshot.iq_reference_ma, snapshot.id_reference_ma, snapshot.uq_mv, snapshot.ud_mv, (unsigned long)snapshot.received_frames, (unsigned long)snapshot.transmitted_frames, (unsigned long)snapshot.transmit_errors);
+    (void)mqtt_manager_publish_qos0(MQTT_MOTOR_TELEMETRY_TOPIC, payload);
 }
 
 /**
  * @brief 处理排队的远程命令，并周期发布电机遥测。
- * @param argument Unused task argument.
+ * @param argument 未使用的任务参数。
  */
 static void mqtt_gateway_task(void *argument)
 {
@@ -340,10 +287,7 @@ static void mqtt_gateway_task(void *argument)
     mqtt_gateway_command_t command;
 
     while (true) {
-        if (xQueueReceive(
-                s_command_queue,
-                &command,
-                pdMS_TO_TICKS(20U)) == pdTRUE) {
+        if (xQueueReceive(s_command_queue, &command, pdMS_TO_TICKS(20U)) == pdTRUE) {
             mqtt_gateway_process_command(command.payload);
         }
         if (xTaskGetTickCount() - last_publish >=
@@ -356,29 +300,19 @@ static void mqtt_gateway_task(void *argument)
 
 /**
  * @brief 创建 MQTT 电机网关队列、注册回调并创建工作任务。
- * @return ESP_OK on success; ESP_ERR_NO_MEM if queue/task allocation fails.
+ * @return 成功时返回 ESP_OK；队列或任务分配失败时返回 ESP_ERR_NO_MEM。
  */
 esp_err_t mqtt_motor_gateway_init(void)
 {
     if (s_gateway_task != NULL) {
         return ESP_OK;
     }
-    s_command_queue = xQueueCreate(
-        MQTT_GATEWAY_QUEUE_LENGTH,
-        sizeof(mqtt_gateway_command_t));
+    s_command_queue = xQueueCreate(MQTT_GATEWAY_QUEUE_LENGTH, sizeof(mqtt_gateway_command_t));
     if (s_command_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    mqtt_manager_set_message_callback(
-        mqtt_gateway_message_callback,
-        NULL);
-    if (xTaskCreate(
-            mqtt_gateway_task,
-            "mqtt_motor",
-            MQTT_GATEWAY_TASK_STACK_SIZE,
-            NULL,
-            MQTT_GATEWAY_TASK_PRIORITY,
-            &s_gateway_task) != pdPASS) {
+    mqtt_manager_set_message_callback(mqtt_gateway_message_callback, NULL);
+    if (xTaskCreate(mqtt_gateway_task, "mqtt_motor", MQTT_GATEWAY_TASK_STACK_SIZE, NULL, MQTT_GATEWAY_TASK_PRIORITY, &s_gateway_task) != pdPASS) {
         mqtt_manager_set_message_callback(NULL, NULL);
         vQueueDelete(s_command_queue);
         s_command_queue = NULL;

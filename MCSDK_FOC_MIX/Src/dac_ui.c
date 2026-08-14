@@ -58,6 +58,7 @@ DAC_Handle_t DAC_Handle;
 /**
   * @brief  Hardware and software initialization of the DAC object.
   * @param  pHandle pointer on related component instance.
+  * @note 中文说明：初始化 DAC_Init 所属模块、外设或运行状态。
   */
 __weak void DAC_Init(DAC_Handle_t *pHandle)
 {
@@ -83,6 +84,7 @@ __weak void DAC_Init(DAC_Handle_t *pHandle)
   * @brief  This method is used to update the DAC outputs. The selected
   *         variables will be provided in the related output channels.
   * @param  pHandle pointer on related component instance.
+  * @note 中文说明：执行 DAC_Exec 对应的周期任务或电机控制流程。
   */
 
 __weak void DAC_Exec(DAC_Handle_t *pHandle)
@@ -114,6 +116,7 @@ __weak void DAC_Exec(DAC_Handle_t *pHandle)
   * @param  regID the variables to be provided in out through the selected
   *         channel. It must be one of the exported UI register Ex.
   *         MC_PROTOCOL_REG_I_A.
+  * @note 中文说明：设置 DAC_SetChannelConfig 对应的控制参数、目标值或外设配置。
   */
 __weak void DAC_SetChannelConfig(DAC_Handle_t *pHandle, DAC_Channel_t bChannel, uint16_t regID)
 {
@@ -132,6 +135,7 @@ __weak void DAC_SetChannelConfig(DAC_Handle_t *pHandle, DAC_Channel_t bChannel, 
 #endif
 }
 
+/** @brief 获取 DAC_GetChannelConfig 对应的状态、配置或计算结果。 */
 uint16_t DAC_GetChannelConfig(DAC_Handle_t *pHandle, DAC_Channel_t bChannel)
 {
 #ifdef NULL_PTR_CHECK_DAC_UI

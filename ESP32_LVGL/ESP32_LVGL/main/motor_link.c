@@ -152,7 +152,7 @@ void motor_link_get_snapshot(motor_link_snapshot_t *snapshot)
         snapshot->iq_ma = uart.iq_ma;
         snapshot->id_ma = uart.id_ma;
         snapshot->iq_reference_ma = uart.iq_reference_ma;
-        /* The UART v1 telemetry has no Id reference field. */
+        /* UART v1 遥测协议不包含 Id 参考值字段。 */
         snapshot->id_reference_ma = 0;
         snapshot->uq_mv = uart.uq_mv;
         snapshot->ud_mv = uart.ud_mv;

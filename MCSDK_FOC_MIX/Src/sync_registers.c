@@ -31,6 +31,7 @@
 #include "dac_ui.h"
 #include "mc_configuration_registers.h"
 
+/** @brief 注册 RI_SetRegisterGlobal 对应的回调函数或通信接口。 */
 uint8_t RI_SetRegisterGlobal(uint16_t regID, uint8_t typeID, uint8_t *data, uint16_t *size, int16_t dataAvailable)
 {
   uint8_t retVal = MCP_CMD_OK;
@@ -178,6 +179,7 @@ uint8_t RI_SetRegisterGlobal(uint16_t regID, uint8_t typeID, uint8_t *data, uint
   return (retVal);
 }
 
+/** @brief 注册 RI_SetRegisterMotor1 对应的回调函数或通信接口。 */
 uint8_t RI_SetRegisterMotor1(uint16_t regID, uint8_t typeID, uint8_t *data, uint16_t *size, int16_t dataAvailable)
 {
   uint8_t retVal = MCP_CMD_OK;
@@ -587,6 +589,7 @@ uint8_t RI_SetRegisterMotor1(uint16_t regID, uint8_t typeID, uint8_t *data, uint
   return (retVal);
 }
 
+/** @brief 注册 RI_GetRegisterGlobal 对应的回调函数或通信接口。 */
 uint8_t RI_GetRegisterGlobal(uint16_t regID,uint8_t typeID,uint8_t * data,uint16_t *size,int16_t freeSpace){
     uint8_t retVal = MCP_CMD_OK;
     switch (typeID)
@@ -1285,6 +1288,7 @@ uint8_t RI_GetRegisterGlobal(uint16_t regID,uint8_t typeID,uint8_t * data,uint16
     return (retVal);
   }
 
+/** @brief 执行 RI_MovString 对应的模块功能。 */
 uint8_t RI_MovString(const char_t *srcString, char_t *destString, uint16_t *size, int16_t maxSize)
 {
   uint8_t retVal = MCP_CMD_OK;

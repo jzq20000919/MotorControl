@@ -4,9 +4,13 @@
 !/.gitattributes
 !/mosquitto-dev.conf
 !/CAN_ESP32_集成说明.md
+!/MCSDK_MIX_ESP32_LVGL_一周掌握与面试指南.md
 !/MCSDK_FOC_MIX/
 !/ESP32_LVGL/
 !/QtMqttSimpleControl/
+!/SguanFOC/
+/SguanFOC/*.pdf
+/SguanFOC/*.png
 
 # Only the active ESP-IDF application is part of this archive.
 /ESP32_LVGL/*

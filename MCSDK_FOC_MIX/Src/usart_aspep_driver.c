@@ -25,7 +25,9 @@
 #include "usart_aspep_driver.h"
 #include "aspep.h"
 
+/** @brief 初始化 ASPEP UART 发送通道。 */
 void UASPEP_TX_INIT(UASPEP_Handle_t *pHandle);
+/** @brief 初始化 ASPEP UART 接收通道。 */
 void UASPEP_RX_INIT(UASPEP_Handle_t *pHandle);
 
 /** @addtogroup MCSDK
@@ -40,6 +42,7 @@ void UASPEP_RX_INIT(UASPEP_Handle_t *pHandle);
   * @brief  Initialization of the Hardware used for data transmission and reception.
   *
   * @param  pHandle Handler of the current instance of the UASPEP component
+  * @note 中文说明：初始化 UASPEP_INIT 所属模块、外设或运行状态。
   */
 void UASPEP_INIT(void *pHWHandle)
 {
@@ -52,6 +55,7 @@ void UASPEP_INIT(void *pHWHandle)
   * @brief  Configures the Hardware used for data transmission to controller.
   *
   * @param  pHandle Handler of the current instance of the UASPEP component
+  * @note 中文说明：初始化 UASPEP_TX_INIT 所属模块、外设或运行状态。
   */
 void UASPEP_TX_INIT(UASPEP_Handle_t *pHandle)
 {
@@ -89,6 +93,7 @@ void UASPEP_TX_INIT(UASPEP_Handle_t *pHandle)
   * @brief  Configures the Hardware used for data reception from controller.
   *
   * @param  pHandle Handler of the current instance of the UASPEP component
+  * @note 中文说明：初始化 UASPEP_RX_INIT 所属模块、外设或运行状态。
   */
 void UASPEP_RX_INIT(UASPEP_Handle_t *pHandle)
 {
@@ -126,6 +131,7 @@ void UASPEP_RX_INIT(UASPEP_Handle_t *pHandle)
   * @param  pHWHandle Hardware components chosen for communication
   * @param  data Data to be transmitted to controller
   * @param  length Length of the data to be transmitted
+  * @note 中文说明：设置 UASPEP_CFG_TRANSMISSION 对应的控制参数、目标值或外设配置。
   */
 void UASPEP_CFG_TRANSMISSION(void *pHWHandle, void *data, uint16_t length)
 {
@@ -149,6 +155,7 @@ void UASPEP_CFG_TRANSMISSION(void *pHWHandle, void *data, uint16_t length)
   * @param  pHWHandle Hardware components chosen for communication
   * @param  buffer Buffer which will receive the communicated data
   * @param  length Length of the received data
+  * @note 中文说明：设置 UASPEP_CFG_RECEPTION 对应的控制参数、目标值或外设配置。
   */
 void UASPEP_CFG_RECEPTION(void *pHWHandle, void* buffer, uint16_t length)
 {
@@ -165,6 +172,7 @@ void UASPEP_CFG_RECEPTION(void *pHWHandle, void* buffer, uint16_t length)
   * @brief  Sets IDLE state : no transmission on going.
   *
   * @param  pHandle Handler of the current instance of the UASPEP component
+  * @note 中文说明：启动或使能 UASPEP_IDLE_ENABLE 对应的外设与控制流程。
   */
 void UASPEP_IDLE_ENABLE(void *pHWHandle)
 {

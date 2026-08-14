@@ -33,9 +33,9 @@ static const char *TAG = "MQTT_MANAGER";
 
 static SemaphoreHandle_t s_lock;
 /*
- * Serializes client API calls with client stop/destroy.  This lock must be
- * independent from s_lock: ESP-MQTT dispatches callbacks while holding its
- * own API lock, and those callbacks update s_snapshot under s_lock.
+ * 用于串行化客户端 API 调用与客户端停止/销毁操作。该锁必须独立于 s_lock：
+ * ESP-MQTT 持有自身 API 锁时会分发回调，而回调会在 s_lock 保护下更新
+ * s_snapshot。
  */
 static SemaphoreHandle_t s_client_api_lock;
 static QueueHandle_t s_command_queue;
@@ -111,8 +111,8 @@ static void mqtt_manager_copy_event_text(
 /**
  * @brief 将 ESP-MQTT 生命周期/数据事件转换为管理器状态和回调。
  *
- * Event payload text is copied before being exposed, because the MQTT library's
- * data buffers are only valid for the duration of the callback.
+ * MQTT 库的数据缓冲区仅在回调执行期间有效，因此事件负载文本必须先复制，
+ * 再提供给管理器外部使用。
  */
 static void mqtt_manager_event_handler(
     void *handler_argument,
@@ -140,14 +140,8 @@ static void mqtt_manager_event_handler(
         mqtt_manager_set_status_locked("Connected - RX topic ready");
         mqtt_manager_unlock();
         if (event != NULL) {
-            (void)esp_mqtt_client_subscribe(
-                event->client,
-                MQTT_MANAGER_TEST_RX_TOPIC,
-                1);
-            (void)esp_mqtt_client_subscribe(
-                event->client,
-                MQTT_MANAGER_CONTROL_TOPIC,
-                1);
+            (void)esp_mqtt_client_subscribe(event->client, MQTT_MANAGER_TEST_RX_TOPIC, 1);
+            (void)esp_mqtt_client_subscribe(event->client, MQTT_MANAGER_CONTROL_TOPIC, 1);
         }
         ESP_LOGI(TAG, "Connected to %s", s_active_uri);
         break;
@@ -157,22 +151,13 @@ static void mqtt_manager_event_handler(
         s_snapshot.connected = false;
         s_snapshot.connecting = true;
         if (s_last_error[0] != '\0') {
-            snprintf(
-                s_snapshot.status,
-                sizeof(s_snapshot.status),
-                "%s; retrying in 3s",
-                s_last_error);
+            snprintf(s_snapshot.status, sizeof(s_snapshot.status), "%s; retrying in 3s", s_last_error);
             s_snapshot.revision++;
         } else {
-            mqtt_manager_set_status_locked(
-                "MQTT link lost; retrying in 3s");
+            mqtt_manager_set_status_locked("MQTT link lost; retrying in 3s");
         }
         mqtt_manager_unlock();
-        ESP_LOGW(
-            TAG,
-            "MQTT disconnected%s%s",
-            s_last_error[0] != '\0' ? ": " : "",
-            s_last_error);
+        ESP_LOGW(TAG, "MQTT disconnected%s%s", s_last_error[0] != '\0' ? ": " : "", s_last_error);
         break;
 
     case MQTT_EVENT_PUBLISHED:
@@ -193,11 +178,7 @@ static void mqtt_manager_event_handler(
         char completed_payload[MQTT_MANAGER_PAYLOAD_MAX_LEN + 1U];
         mqtt_manager_lock();
         if (event->current_data_offset == 0) {
-            mqtt_manager_copy_event_text(
-                s_snapshot.last_topic,
-                sizeof(s_snapshot.last_topic),
-                event->topic,
-                event->topic_len);
+            mqtt_manager_copy_event_text(s_snapshot.last_topic, sizeof(s_snapshot.last_topic), event->topic, event->topic_len);
             s_snapshot.last_payload[0] = '\0';
         }
         if (event->data != NULL && event->data_len > 0 &&
@@ -210,34 +191,22 @@ static void mqtt_manager_event_handler(
             if (length > available) {
                 length = available;
             }
-            memcpy(
-                s_snapshot.last_payload + offset,
-                event->data,
-                length);
+            memcpy(s_snapshot.last_payload + offset, event->data, length);
             s_snapshot.last_payload[offset + length] = '\0';
         }
         if (event->current_data_offset + event->data_len >=
             event->total_data_len) {
             s_snapshot.received_messages++;
             mqtt_manager_set_status_locked("Message received");
-            strlcpy(
-                completed_topic,
-                s_snapshot.last_topic,
-                sizeof(completed_topic));
-            strlcpy(
-                completed_payload,
-                s_snapshot.last_payload,
-                sizeof(completed_payload));
+            strlcpy(completed_topic, s_snapshot.last_topic, sizeof(completed_topic));
+            strlcpy(completed_payload, s_snapshot.last_payload, sizeof(completed_payload));
             callback = s_message_callback;
             callback_context = s_message_callback_context;
             message_complete = true;
         }
         mqtt_manager_unlock();
         if (message_complete && callback != NULL) {
-            callback(
-                completed_topic,
-                completed_payload,
-                callback_context);
+            callback(completed_topic, completed_payload, callback_context);
         }
         break;
     }
@@ -248,37 +217,17 @@ static void mqtt_manager_event_handler(
         if (event != NULL && event->error_handle != NULL) {
             const esp_mqtt_error_codes_t *error = event->error_handle;
             if (error->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
-                snprintf(
-                    s_last_error,
-                    sizeof(s_last_error),
-                    "MQTT TCP sock=%d tls=0x%X stack=0x%X",
-                    error->esp_transport_sock_errno,
-                    (unsigned int)error->esp_tls_last_esp_err,
-                    (unsigned int)error->esp_tls_stack_err);
+                snprintf(s_last_error, sizeof(s_last_error), "MQTT TCP sock=%d tls=0x%X stack=0x%X", error->esp_transport_sock_errno, (unsigned int)error->esp_tls_last_esp_err, (unsigned int)error->esp_tls_stack_err);
             } else if (
                 error->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
-                snprintf(
-                    s_last_error,
-                    sizeof(s_last_error),
-                    "MQTT refused code=%d",
-                    (int)error->connect_return_code);
+                snprintf(s_last_error, sizeof(s_last_error), "MQTT refused code=%d", (int)error->connect_return_code);
             } else {
-                snprintf(
-                    s_last_error,
-                    sizeof(s_last_error),
-                    "MQTT error type=%d",
-                    (int)error->error_type);
+                snprintf(s_last_error, sizeof(s_last_error), "MQTT error type=%d", (int)error->error_type);
             }
         } else {
-            strlcpy(
-                s_last_error,
-                "MQTT connection error",
-                sizeof(s_last_error));
+            strlcpy(s_last_error, "MQTT connection error", sizeof(s_last_error));
         }
-        strlcpy(
-            s_snapshot.status,
-            s_last_error,
-            sizeof(s_snapshot.status));
+        strlcpy(s_snapshot.status, s_last_error, sizeof(s_snapshot.status));
         s_snapshot.revision++;
         mqtt_manager_unlock();
         ESP_LOGE(TAG, "%s", s_last_error);
@@ -309,7 +258,7 @@ static void mqtt_manager_stop_client(void)
 
 /**
  * @brief 串行执行 MQTT 连接/断开命令的工作任务。
- * @param argument Unused task argument.
+ * @param argument 未使用的任务参数。
  */
 static void mqtt_manager_worker(void *argument)
 {
@@ -317,10 +266,7 @@ static void mqtt_manager_worker(void *argument)
     mqtt_manager_command_t command;
 
     while (true) {
-        if (xQueueReceive(
-                s_command_queue,
-                &command,
-                portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(s_command_queue, &command, portMAX_DELAY) != pdTRUE) {
             continue;
         }
 
@@ -353,11 +299,7 @@ static void mqtt_manager_worker(void *argument)
             continue;
         }
 
-        esp_err_t result = esp_mqtt_client_register_event(
-            client,
-            ESP_EVENT_ANY_ID,
-            mqtt_manager_event_handler,
-            NULL);
+        esp_err_t result = esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_manager_event_handler, NULL);
         if (result == ESP_OK) {
             mqtt_manager_lock();
             s_client = client;
@@ -370,11 +312,7 @@ static void mqtt_manager_worker(void *argument)
                 s_client = NULL;
             }
             s_snapshot.connecting = false;
-            snprintf(
-                s_snapshot.status,
-                sizeof(s_snapshot.status),
-                "MQTT start failed: %s",
-                esp_err_to_name(result));
+            snprintf(s_snapshot.status, sizeof(s_snapshot.status), "MQTT start failed: %s", esp_err_to_name(result));
             s_snapshot.revision++;
             mqtt_manager_unlock();
             (void)esp_mqtt_client_destroy(client);
@@ -384,7 +322,7 @@ static void mqtt_manager_worker(void *argument)
 
 /**
  * @brief 创建管理器同步对象、唯一客户端 ID 及工作任务。
- * @return ESP_OK on success, otherwise MAC lookup or allocation failure.
+ * @return 成功时返回 ESP_OK，否则返回 MAC 地址查询或资源分配错误码。
  */
 esp_err_t mqtt_manager_init(void)
 {
@@ -401,40 +339,21 @@ esp_err_t mqtt_manager_init(void)
 
     s_lock = xSemaphoreCreateMutex();
     s_client_api_lock = xSemaphoreCreateMutex();
-    s_command_queue = xQueueCreate(
-        MQTT_MANAGER_COMMAND_QUEUE_LENGTH,
-        sizeof(mqtt_manager_command_t));
+    s_command_queue = xQueueCreate(MQTT_MANAGER_COMMAND_QUEUE_LENGTH, sizeof(mqtt_manager_command_t));
     if (s_lock == NULL || s_client_api_lock == NULL ||
         s_command_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
     memset(&s_snapshot, 0, sizeof(s_snapshot));
-    snprintf(
-        s_client_id,
-        sizeof(s_client_id),
-        "esp32s3-motor-%02X%02X%02X%02X%02X%02X",
-        station_mac[0], station_mac[1], station_mac[2],
-        station_mac[3], station_mac[4], station_mac[5]);
+    snprintf(s_client_id, sizeof(s_client_id), "esp32s3-motor-%02X%02X%02X%02X%02X%02X", station_mac[0], station_mac[1], station_mac[2], station_mac[3], station_mac[4], station_mac[5]);
     s_snapshot.initialized = true;
-    strlcpy(
-        s_snapshot.status,
-        "Ready - enter broker URI",
-        sizeof(s_snapshot.status));
+    strlcpy(s_snapshot.status, "Ready - enter broker URI", sizeof(s_snapshot.status));
     ESP_LOGI(TAG, "MQTT client ID: %s", s_client_id);
 
-    if (xTaskCreate(
-            mqtt_manager_worker,
-            "mqtt_manager",
-            MQTT_MANAGER_WORKER_STACK_SIZE,
-            NULL,
-            MQTT_MANAGER_WORKER_PRIORITY,
-            NULL) != pdPASS) {
+    if (xTaskCreate(mqtt_manager_worker, "mqtt_manager", MQTT_MANAGER_WORKER_STACK_SIZE, NULL, MQTT_MANAGER_WORKER_PRIORITY, NULL) != pdPASS) {
         s_snapshot.initialized = false;
-        strlcpy(
-            s_snapshot.status,
-            "MQTT worker allocation failed",
-            sizeof(s_snapshot.status));
+        strlcpy(s_snapshot.status, "MQTT worker allocation failed", sizeof(s_snapshot.status));
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -442,7 +361,7 @@ esp_err_t mqtt_manager_init(void)
 
 /**
  * @brief 校验并排队一个 MQTT Broker 连接请求。
- * @return ESP_OK when queued; actual connection result is delivered asynchronously.
+ * @return 请求成功入队时返回 ESP_OK；实际连接结果会异步上报。
  */
 esp_err_t mqtt_manager_connect_async(const char *broker_uri)
 {
@@ -465,10 +384,7 @@ esp_err_t mqtt_manager_connect_async(const char *broker_uri)
     }
     s_snapshot.connecting = true;
     s_snapshot.connected = false;
-    strlcpy(
-        s_snapshot.broker_uri,
-        broker_uri,
-        sizeof(s_snapshot.broker_uri));
+    strlcpy(s_snapshot.broker_uri, broker_uri, sizeof(s_snapshot.broker_uri));
     mqtt_manager_set_status_locked("Connection queued");
     mqtt_manager_unlock();
 
@@ -498,7 +414,7 @@ esp_err_t mqtt_manager_disconnect_async(void)
 
 /**
  * @brief 通过活动 MQTT 客户端排队一条 QoS 1 发布消息。
- * @return ESP_ERR_INVALID_STATE when no broker connection is active.
+ * @return 当前没有活动 Broker 连接时返回 ESP_ERR_INVALID_STATE。
  */
 esp_err_t mqtt_manager_publish(
     const char *topic,
@@ -517,14 +433,7 @@ esp_err_t mqtt_manager_publish(
     }
     esp_mqtt_client_handle_t client = s_client;
     mqtt_manager_unlock();
-    const int message_id = esp_mqtt_client_enqueue(
-        client,
-        topic,
-        payload,
-        0,
-        1,
-        0,
-        true);
+    const int message_id = esp_mqtt_client_enqueue(client, topic, payload, 0, 1, 0, true);
     if (message_id >= 0) {
         mqtt_manager_lock();
         mqtt_manager_set_status_locked("Test message queued");
@@ -552,21 +461,14 @@ esp_err_t mqtt_manager_publish_qos0(
     }
     esp_mqtt_client_handle_t client = s_client;
     mqtt_manager_unlock();
-    const int message_id = esp_mqtt_client_enqueue(
-        client,
-        topic,
-        payload,
-        0,
-        0,
-        0,
-        true);
+    const int message_id = esp_mqtt_client_enqueue(client, topic, payload, 0, 0, 0, true);
     mqtt_manager_client_api_unlock();
     return message_id >= 0 ? ESP_OK : ESP_FAIL;
 }
 
 /**
  * @brief 注册用于接收完整 MQTT 入站消息的应用回调。
- * @note The callback must return quickly and must not block ESP-MQTT's event task.
+ * @note 回调必须快速返回，不得阻塞 ESP-MQTT 事件任务。
  */
 void mqtt_manager_set_message_callback(
     mqtt_manager_message_callback_t callback,

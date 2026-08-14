@@ -88,6 +88,7 @@
   * function.
   *
   * @sa MCI_ExecSpeedRamp
+  * @note 中文说明：执行 MCI_ExecSpeedRamp 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecSpeedRamp(MCI_Handle_t *pHandle, int16_t hFinalSpeed, uint16_t hDurationms)
 {
@@ -128,6 +129,7 @@ __weak void MCI_ExecSpeedRamp(MCI_Handle_t *pHandle, int16_t hFinalSpeed, uint16
   * function.
   *
   * @sa MCI_ExecSpeedRamp_F
+  * @note 中文说明：执行 MCI_ExecSpeedRamp_F 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecSpeedRamp_F(MCI_Handle_t *pHandle, const float_t FinalSpeed, uint16_t hDurationms)
 {
@@ -168,6 +170,7 @@ __weak void MCI_ExecSpeedRamp_F(MCI_Handle_t *pHandle, const float_t FinalSpeed,
   * function.
   *
   * @sa MCI_ExecTorqueRamp
+  * @note 中文说明：执行 MCI_ExecTorqueRamp 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecTorqueRamp(MCI_Handle_t *pHandle, int16_t hFinalTorque, uint16_t hDurationms)
 {
@@ -210,6 +213,7 @@ __weak void MCI_ExecTorqueRamp(MCI_Handle_t *pHandle, int16_t hFinalTorque, uint
   * function.
   *
   * @sa MCI_ExecTorqueRamp_F
+  * @note 中文说明：执行 MCI_ExecTorqueRamp_F 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecTorqueRamp_F(MCI_Handle_t *pHandle, const float_t FinalTorque, uint16_t hDurationms)
 {
@@ -242,6 +246,7 @@ __weak void MCI_ExecTorqueRamp_F(MCI_Handle_t *pHandle, const float_t FinalTorqu
   * function.
 
   @sa MCI_SetCurrentReferences_F
+  * @note 中文说明：设置 MCI_SetCurrentReferences 对应的控制参数、目标值或外设配置。
   */
 __weak void MCI_SetCurrentReferences(MCI_Handle_t *pHandle, qd_t Iqdref)
 {
@@ -278,6 +283,7 @@ __weak void MCI_SetCurrentReferences(MCI_Handle_t *pHandle, qd_t Iqdref)
   * function.
 
   @sa MCI_SetCurrentReferences
+  * @note 中文说明：设置 MCI_SetCurrentReferences_F 对应的控制参数、目标值或外设配置。
   */
 __weak void MCI_SetCurrentReferences_F(MCI_Handle_t *pHandle, qd_f_t IqdRef)
 {
@@ -314,6 +320,7 @@ __weak void MCI_SetCurrentReferences_F(MCI_Handle_t *pHandle, qd_f_t IqdRef)
   *
   * Users can check the status of the command by calling the MCI_IsCommandAcknowledged()
   * function.
+  * @note 中文说明：执行 MCI_ExecPositionCommand 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecPositionCommand(MCI_Handle_t *pHandle, float_t FinalPosition, float_t Duration)
 {
@@ -373,6 +380,7 @@ __weak void MCI_ExecPositionCommand(MCI_Handle_t *pHandle, float_t FinalPosition
   * for the motor to be running in steady state, the application has to check the
   * state machine of the motor and verify that the #RUN state has been reached.
   * Note also that if the startup sequence fails the #RUN state may never be reached.
+  * @note 中文说明：启动或使能 MCI_StartMotor 对应的外设与控制流程。
   */
 __weak bool MCI_StartMotor(MCI_Handle_t *pHandle)
 {
@@ -435,6 +443,7 @@ __weak bool MCI_StartMotor(MCI_Handle_t *pHandle)
   * for the motor to be running in steady state, the application has to check the
   * state machine of the motor and verify that the #RUN state has been reached.
   * Note also that if the startup sequence fails the #RUN state may never be reached.
+  * @note 中文说明：启动或使能 MCI_StartWithPolarizationMotor 对应的外设与控制流程。
   */
 __weak bool MCI_StartWithPolarizationMotor(MCI_Handle_t* pHandle)
 {
@@ -480,6 +489,7 @@ __weak bool MCI_StartWithPolarizationMotor(MCI_Handle_t* pHandle)
   * @param  pHandle Pointer on the component instance to work on.
   * @retval bool It returns true if the command is successfully executed
   *         otherwise it return false.
+  * @note 中文说明：启动或使能 MCI_StartOffsetMeasurments 对应的外设与控制流程。
   */
 __weak bool MCI_StartOffsetMeasurments(MCI_Handle_t *pHandle)
 {
@@ -523,6 +533,7 @@ __weak bool MCI_StartOffsetMeasurments(MCI_Handle_t *pHandle)
   * @param  pHandle Pointer on the component instance to work on.
   * @param  PolarizationOffsets Pointer on ploarization offset structure in which offsets will be written
   * @retval returns true if the command is successfully executed; returns false otherwise.
+  * @note 中文说明：获取 MCI_GetCalibratedOffsetsMotor 对应的状态、配置或计算结果。
   */
 __weak bool MCI_GetCalibratedOffsetsMotor(MCI_Handle_t *pHandle, PolarizationOffsets_t *PolarizationOffsets)
 {
@@ -569,6 +580,7 @@ __weak bool MCI_GetCalibratedOffsetsMotor(MCI_Handle_t *pHandle, PolarizationOff
   *         and C values.
   * @retval Returns true if the command is successfully executed
   *         otherwise it return false.
+  * @note 中文说明：设置 MCI_SetCalibratedOffsetsMotor 对应的控制参数、目标值或外设配置。
   */
 __weak bool MCI_SetCalibratedOffsetsMotor(MCI_Handle_t *pHandle, PolarizationOffsets_t *PolarizationOffsets)
 {
@@ -614,6 +626,7 @@ __weak bool MCI_SetCalibratedOffsetsMotor(MCI_Handle_t *pHandle, PolarizationOff
   *
   * @param  pHandle Pointer on the component instance to work on.
   * @retval returns true if the command is successfully executed, false otherwise.
+  * @note 中文说明：停止或禁用 MCI_StopMotor 对应的外设与控制流程。
   */
 __weak bool MCI_StopMotor(MCI_Handle_t *pHandle)
 {
@@ -669,6 +682,7 @@ __weak bool MCI_StopMotor(MCI_Handle_t *pHandle)
  * Otherwise, it oes nothing and returns false.
  *
  * @param  pHandle Pointer on the target motor drive structure.
+ * @note 中文说明：检查 MCI_FaultAcknowledged 对应的状态、故障或完成条件。
  */
 __weak bool MCI_FaultAcknowledged(MCI_Handle_t *pHandle)
 {
@@ -704,6 +718,7 @@ __weak bool MCI_FaultAcknowledged(MCI_Handle_t *pHandle)
  * @param pHandle pointer of type  STM_Handle_t
  * @param hSetErrors Bit field reporting faults currently present
  * @param hResetErrors Bit field reporting faults to be cleared
+ * @note 中文说明：检查 MCI_FaultProcessing 对应的状态、故障或完成条件。
  */
 __weak void MCI_FaultProcessing(MCI_Handle_t *pHandle, uint16_t hSetErrors, uint16_t hResetErrors)
 {
@@ -729,6 +744,7 @@ __weak void MCI_FaultProcessing(MCI_Handle_t *pHandle, uint16_t hSetErrors, uint
   *         and eventually to execute the buffered command if the condition
   *         occurs.
   * @param  pHandle Pointer on the component instance to work on.
+  * @note 中文说明：执行 MCI_ExecBufferedCommands 对应的周期任务或电机控制流程。
   */
 __weak void MCI_ExecBufferedCommands(MCI_Handle_t *pHandle)
 {
@@ -802,6 +818,7 @@ __weak void MCI_ExecBufferedCommands(MCI_Handle_t *pHandle)
   * - #MCI_COMMAND_EXECUTED_UNSUCCESSFULLY if the buffered command has
   * been executed unsuccessfully. In this case calling this function
   * resets the command state to #MCI_BUFFER_EMPTY.
+  * @note 中文说明：清除或确认 MCI_IsCommandAcknowledged 对应的状态与历史数据。
   */
 __weak MCI_CommandState_t MCI_IsCommandAcknowledged(MCI_Handle_t *pHandle)
 {
@@ -834,6 +851,7 @@ __weak MCI_CommandState_t MCI_IsCommandAcknowledged(MCI_Handle_t *pHandle)
   * @brief  It returns information about the state of the related pSTM object.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval State_t It returns the current state of the related pSTM object.
+  * @note 中文说明：获取 MCI_GetSTMState 对应的状态、配置或计算结果。
   */
 __weak MCI_State_t MCI_GetSTMState(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -848,6 +866,7 @@ __weak MCI_State_t MCI_GetSTMState(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Ru
   * @brief  It returns information about the state of the position control.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval State_t It returns the current state position control execution.
+  * @note 中文说明：获取 MCI_GetCtrlPositionState 对应的状态、配置或计算结果。
   */
 __weak PosCtrlStatus_t MCI_GetCtrlPositionState(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -862,6 +881,7 @@ __weak PosCtrlStatus_t MCI_GetCtrlPositionState(MCI_Handle_t *pHandle) //cstat !
   * @brief  It returns information about the rotor alignment procedure.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval State_t It returns the current state of the alignment.
+  * @note 中文说明：获取 MCI_GetAlignmentStatus 对应的状态、配置或计算结果。
   */
 __weak AlignStatus_t MCI_GetAlignmentStatus(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -876,6 +896,7 @@ __weak AlignStatus_t MCI_GetAlignmentStatus(MCI_Handle_t *pHandle) //cstat !MISR
   * @brief  It returns the current position of the rotor.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t It returns the current mechanical angular position of the rotor.
+  * @note 中文说明：获取 MCI_GetCurrentPosition 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetCurrentPosition(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -890,6 +911,7 @@ __weak float_t MCI_GetCurrentPosition(MCI_Handle_t *pHandle) //cstat !MISRAC2012
   * @brief  It returns the final position asked to the motor.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t It returns the target mechanical angular position of the rotor.
+  * @note 中文说明：获取 MCI_GetTargetPosition 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetTargetPosition(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -904,6 +926,7 @@ __weak float_t MCI_GetTargetPosition(MCI_Handle_t *pHandle) //cstat !MISRAC2012-
   * @brief  It returns the total movement duration to reach the final position.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t It returns the movement duration allowed to reach the target position.
+  * @note 中文说明：获取 MCI_GetMoveDuration 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetMoveDuration(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -918,6 +941,7 @@ __weak float_t MCI_GetMoveDuration(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Ru
   * @brief  It returns the current estimated angle.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t Returns the current estimated mechanical angular position of the rotor.
+  * @note 中文说明：获取 MCI_GetCtrlPositionAngle 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetCtrlPositionAngle(MCI_Handle_t *pHandle)
 {
@@ -932,6 +956,7 @@ __weak float_t MCI_GetCtrlPositionAngle(MCI_Handle_t *pHandle)
   * @brief  sets the current estimated anglular position.
   * @param  pHandle Pointer on the component instance to work on.
   * @param  fCurrentPosition current mechanical angular position (in radian).
+  * @note 中文说明：设置 MCI_SetCtrlPositionAngle 对应的控制参数、目标值或外设配置。
   */
 __weak void MCI_SetCtrlPositionAngle(MCI_Handle_t *pHandle, float_t fCurrentPosition)
 {
@@ -953,6 +978,7 @@ __weak void MCI_SetCtrlPositionAngle(MCI_Handle_t *pHandle, float_t fCurrentPosi
   * @param  pHandle Pointer on the target motor drive structure.
   * @retval uint16_t  16 bit fields with information about the faults
   *         historically occurred since the state machine has been moved into
+  * @note 中文说明：获取 MCI_GetOccurredFaults 对应的状态、配置或计算结果。
   */
 __weak uint16_t MCI_GetOccurredFaults(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -973,6 +999,7 @@ __weak uint16_t MCI_GetOccurredFaults(MCI_Handle_t *pHandle) //cstat !MISRAC2012
   * Possible error codes are listed in the @ref fault_codes "Fault codes" section.
   *
   * @param  pHandle Pointer on the target motor drive structure.
+  * @note 中文说明：获取 MCI_GetCurrentFaults 对应的状态、配置或计算结果。
   */
 __weak uint16_t MCI_GetCurrentFaults(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -997,6 +1024,7 @@ __weak uint16_t MCI_GetCurrentFaults(MCI_Handle_t *pHandle) //cstat !MISRAC2012-
   * @sa MCI_GetOccurredFaults, MCI_GetCurrentFaults
   *
   * @param  pHandle Pointer on the target motor drive structure.
+  * @note 中文说明：获取 MCI_GetFaultState 对应的状态、配置或计算结果。
   */
 __weak uint32_t MCI_GetFaultState(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1022,6 +1050,7 @@ __weak uint32_t MCI_GetFaultState(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rul
   * @param  pHandle Pointer on the component instance to work on.
   * @retval MC_ControlMode_t It returns the modality of STC. It can be one of
   *         these two values: MCM_TORQUE_MODE or MCM_SPEED_MODE.
+  * @note 中文说明：获取 MCI_GetControlMode 对应的状态、配置或计算结果。
   */
 __weak MC_ControlMode_t MCI_GetControlMode(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1038,6 +1067,7 @@ __weak MC_ControlMode_t MCI_GetControlMode(MCI_Handle_t *pHandle) //cstat !MISRA
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t It returns 1 or -1 according the sign of hFinalSpeed,
   *         hFinalTorque or Iqdref.q of the last command.
+  * @note 中文说明：获取 MCI_GetImposedMotorDirection 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetImposedMotorDirection(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1106,6 +1136,7 @@ __weak int16_t MCI_GetImposedMotorDirection(MCI_Handle_t *pHandle) //cstat !MISR
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t last ramp final speed sent by the user expressed in
   *         the unit defined by #SPEED_UNIT.
+  * @note 中文说明：获取 MCI_GetLastRampFinalSpeed 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetLastRampFinalSpeed(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1132,6 +1163,7 @@ __weak int16_t MCI_GetLastRampFinalSpeed(MCI_Handle_t *pHandle) //cstat !MISRAC2
   *         digit.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t last ramp final torque sent by the user expressed in digit
+  * @note 中文说明：获取 MCI_GetLastRampFinalTorque 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetLastRampFinalTorque(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1158,6 +1190,7 @@ __weak int16_t MCI_GetLastRampFinalTorque(MCI_Handle_t *pHandle) //cstat !MISRAC
   *         Ampere.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t last ramp final torque sent by the user expressed in digit
+  * @note 中文说明：获取 MCI_GetLastRampFinalTorque_F 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetLastRampFinalTorque_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1183,6 +1216,7 @@ __weak float_t MCI_GetLastRampFinalTorque_F(MCI_Handle_t *pHandle) //cstat !MISR
   *         user .
   * @param  pHandle Pointer on the component instance to work on.
   * @retval uint16_t last ramp final torque sent by the user expressed in digit
+  * @note 中文说明：获取 MCI_GetLastRampFinalDuration 对应的状态、配置或计算结果。
   */
 __weak uint16_t MCI_GetLastRampFinalDuration(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1207,6 +1241,7 @@ __weak uint16_t MCI_GetLastRampFinalDuration(MCI_Handle_t *pHandle) //cstat !MIS
   * @brief  It returns last ramp final speed expressed in rpm.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t last ramp final speed sent by the user expressed in rpm.
+  * @note 中文说明：获取 MCI_GetLastRampFinalSpeed_F 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetLastRampFinalSpeed_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1227,6 +1262,7 @@ __weak float_t MCI_GetLastRampFinalSpeed_F(MCI_Handle_t *pHandle) //cstat !MISRA
   * @brief  Check if the settled speed or torque ramp has been completed.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval bool It returns true if the ramp is completed, false otherwise.
+  * @note 中文说明：检查 MCI_RampCompleted 对应的状态、故障或完成条件。
   */
 __weak bool MCI_RampCompleted(MCI_Handle_t *pHandle)
 {
@@ -1260,6 +1296,7 @@ __weak bool MCI_RampCompleted(MCI_Handle_t *pHandle)
   *
   * @deprecated This function is deprecated and should not be used anymore. It will be
   *             removed in a future version of the MCSDK. Use MCI_StopRamp() instead.
+  * @note 中文说明：停止或禁用 MCI_StopSpeedRamp 对应的外设与控制流程。
   */
 __weak bool MCI_StopSpeedRamp(MCI_Handle_t *pHandle)
 {
@@ -1273,6 +1310,7 @@ __weak bool MCI_StopSpeedRamp(MCI_Handle_t *pHandle)
 /**
   * @brief  Stop the execution of ongoing ramp.
   * @param  pHandle Pointer on the component instance to work on.
+  * @note 中文说明：停止或禁用 MCI_StopRamp 对应的外设与控制流程。
   */
 __weak void MCI_StopRamp(MCI_Handle_t *pHandle)
 {
@@ -1297,6 +1335,7 @@ __weak void MCI_StopRamp(MCI_Handle_t *pHandle)
   * @retval bool It returns true if the speed sensor utilized for reference
   *         frame transformation and (in speed control mode) for speed
   *         regulation is reliable, false otherwise
+  * @note 中文说明：获取 MCI_GetSpdSensorReliability 对应的状态、配置或计算结果。
   */
 __weak bool MCI_GetSpdSensorReliability(const MCI_Handle_t *pHandle)
 {
@@ -1324,6 +1363,7 @@ __weak bool MCI_GetSpdSensorReliability(const MCI_Handle_t *pHandle)
   *         the unit defined by #SPEED_UNIT and related to the sensor actually
   *         used by FOC algorithm
   * @param  pHandle Pointer on the component instance to work on.
+  * @note 中文说明：获取 MCI_GetAvrgMecSpeedUnit 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetAvrgMecSpeedUnit(MCI_Handle_t *pHandle)
 {
@@ -1348,6 +1388,7 @@ __weak int16_t MCI_GetAvrgMecSpeedUnit(MCI_Handle_t *pHandle)
   * @brief  Returns the last computed average mechanical speed, expressed in rpm
   *         and related to the sensor actually used by FOC algorithm.
   * @param  pHandle Pointer on the component instance to work on.
+  * @note 中文说明：获取 MCI_GetAvrgMecSpeed_F 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetAvrgMecSpeed_F(MCI_Handle_t *pHandle)
 {
@@ -1373,6 +1414,7 @@ __weak float_t MCI_GetAvrgMecSpeed_F(MCI_Handle_t *pHandle)
   *
   * @param  pHandle Pointer on the component instance to work on.
   *
+  * @note 中文说明：获取 MCI_GetMecSpeedRefUnit 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetMecSpeedRefUnit(MCI_Handle_t *pHandle)
 {
@@ -1388,6 +1430,7 @@ __weak int16_t MCI_GetMecSpeedRefUnit(MCI_Handle_t *pHandle)
   *
   * @param  pHandle Pointer on the component instance to work on.
   *
+  * @note 中文说明：获取 MCI_GetMecSpeedRef_F 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetMecSpeedRef_F(MCI_Handle_t *pHandle)
 {
@@ -1403,6 +1446,7 @@ __weak float_t MCI_GetMecSpeedRef_F(MCI_Handle_t *pHandle)
   * @brief  It returns stator current Iab in ab_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval ab_t Stator current Iab
+  * @note 中文说明：获取 MCI_GetIab 对应的状态、配置或计算结果。
   */
 __weak ab_t MCI_GetIab(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1424,6 +1468,7 @@ __weak ab_t MCI_GetIab(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 #endif
 }
 
+/** @brief 获取 MCI_GetIab_F 对应的状态、配置或计算结果。 */
 __weak ab_f_t MCI_GetIab_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
 
@@ -1450,6 +1495,7 @@ __weak ab_f_t MCI_GetIab_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns stator current Ialphabeta in alphabeta_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval alphabeta_t Stator current Ialphabeta
+  * @note 中文说明：获取 MCI_GetIalphabeta 对应的状态、配置或计算结果。
   */
 __weak alphabeta_t MCI_GetIalphabeta(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1475,6 +1521,7 @@ __weak alphabeta_t MCI_GetIalphabeta(MCI_Handle_t *pHandle) //cstat !MISRAC2012-
   * @brief  It returns stator current Iqd in qd_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval qd_t Stator current Iqd
+  * @note 中文说明：获取 MCI_GetIqd 对应的状态、配置或计算结果。
   */
 __weak qd_t MCI_GetIqd(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1500,6 +1547,7 @@ __weak qd_t MCI_GetIqd(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns stator current Iqd in float_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval qd_f_t Stator current Iqd (in Ampere)
+  * @note 中文说明：获取 MCI_GetIqd_F 对应的状态、配置或计算结果。
   */
 __weak qd_f_t MCI_GetIqd_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1525,6 +1573,7 @@ __weak qd_f_t MCI_GetIqd_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns stator current Iqdref in qd_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval qd_t Stator current Iqdref
+  * @note 中文说明：获取 MCI_GetIqdref 对应的状态、配置或计算结果。
   */
 __weak qd_t MCI_GetIqdref(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1550,6 +1599,7 @@ __weak qd_t MCI_GetIqdref(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns stator current Iqdref in float_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval qd_f_t Stator current Iqdref (in Ampere)
+  * @note 中文说明：获取 MCI_GetIqdref_F 对应的状态、配置或计算结果。
   */
 __weak qd_f_t MCI_GetIqdref_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1575,6 +1625,7 @@ __weak qd_f_t MCI_GetIqdref_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.
   * @brief  It returns stator current Vqd in qd_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval qd_t Stator current Vqd
+  * @note 中文说明：获取 MCI_GetVqd 对应的状态、配置或计算结果。
   */
 __weak qd_t MCI_GetVqd(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1600,6 +1651,7 @@ __weak qd_t MCI_GetVqd(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns stator current Valphabeta in alphabeta_t format
   * @param  pHandle Pointer on the component instance to work on.
   * @retval alphabeta_t Stator current Valphabeta
+  * @note 中文说明：获取 MCI_GetValphabeta 对应的状态、配置或计算结果。
   */
 __weak alphabeta_t MCI_GetValphabeta(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1626,6 +1678,7 @@ __weak alphabeta_t MCI_GetValphabeta(MCI_Handle_t *pHandle) //cstat !MISRAC2012-
   *         frame transformation
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t Rotor electrical angle in dpp format
+  * @note 中文说明：获取 MCI_GetElAngledpp 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetElAngledpp(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1641,6 +1694,7 @@ __weak int16_t MCI_GetElAngledpp(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule
   *         Iqref and Idref computation
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t Teref
+  * @note 中文说明：获取 MCI_GetTeref 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetTeref(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1655,6 +1709,7 @@ __weak int16_t MCI_GetTeref(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
   * @brief  It returns the reference electrical torque.
   * @param  pHandle Pointer on the component instance to work on.
   * @retval float_t Teref
+  * @note 中文说明：获取 MCI_GetTeref_F 对应的状态、配置或计算结果。
   */
 __weak float_t MCI_GetTeref_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1671,6 +1726,7 @@ __weak float_t MCI_GetTeref_F(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.
   *         Current(Amp) = [Current(s16A) * Vdd micro] / [65536 * Rshunt * Aop]
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t Motor phase current (0-to-peak) in s16A
+  * @note 中文说明：获取 MCI_GetPhaseCurrentAmplitude 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetPhaseCurrentAmplitude(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1700,6 +1756,7 @@ __weak int16_t MCI_GetPhaseCurrentAmplitude(MCI_Handle_t *pHandle) //cstat !MISR
   *         PhaseVoltage(V) = [PhaseVoltage(s16A) * Vbus(V)] /[sqrt(3) *32767]
   * @param  pHandle Pointer on the component instance to work on.
   * @retval int16_t Motor phase voltage (0-to-peak) in s16V
+  * @note 中文说明：获取 MCI_GetPhaseVoltageAmplitude 对应的状态、配置或计算结果。
   */
 __weak int16_t MCI_GetPhaseVoltageAmplitude(MCI_Handle_t *pHandle) //cstat !MISRAC2012-Rule-8.13
 {
@@ -1737,6 +1794,7 @@ __weak int16_t MCI_GetPhaseVoltageAmplitude(MCI_Handle_t *pHandle) //cstat !MISR
 /**
   * @brief  It re-initializes Iqdref variables with their default values.
   * @param  pHandle Pointer on the component instance to work on.
+  * @note 中文说明：清除或确认 MCI_Clear_Iqdref 对应的状态与历史数据。
   */
 __weak void MCI_Clear_Iqdref(MCI_Handle_t *pHandle)
 {

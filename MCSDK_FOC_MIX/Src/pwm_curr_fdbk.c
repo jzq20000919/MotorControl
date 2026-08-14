@@ -78,6 +78,7 @@
   * @brief  Used to clear variables in CPWMC.
   *
   * @param pHandle: Handler of the current instance of the PWM component.
+  * @note 中文说明：清除或确认 PWMC_Clear 对应的状态与历史数据。
   */
 void PWMC_Clear(PWMC_Handle_t *pHandle)
 {
@@ -104,6 +105,7 @@ void PWMC_Clear(PWMC_Handle_t *pHandle)
   *
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 设置 PWMC_SetOffsetCalib 对应的控制参数、目标值或外设配置。 */
 __weak void PWMC_SetOffsetCalib(PWMC_Handle_t *pHandle, PolarizationOffsets_t *offsets)
 {
   if (MC_NULL == pHandle)
@@ -121,6 +123,7 @@ __weak void PWMC_SetOffsetCalib(PWMC_Handle_t *pHandle, PolarizationOffsets_t *o
   *
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 获取 PWMC_GetOffsetCalib 对应的状态、配置或计算结果。 */
 __weak void PWMC_GetOffsetCalib(PWMC_Handle_t *pHandle, PolarizationOffsets_t *offsets)
 {
   if (MC_NULL == pHandle)
@@ -159,6 +162,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @param  Valfa_beta: Voltage Components expressed in the @f$(\alpha, \beta)@f$ reference frame.
   * @retval #MC_NO_ERROR if no error occurred or #MC_DURATION if the duty cycles were
   *         set too late for being taken into account in the next PWM cycle.
+  * @note 中文说明：设置 PWMC_SetPhaseVoltage 对应的控制参数、目标值或外设配置。
   */
 __weak uint16_t PWMC_SetPhaseVoltage(PWMC_Handle_t *pHandle, alphabeta_t Valfa_beta)
 {
@@ -334,6 +338,7 @@ __weak uint16_t PWMC_SetPhaseVoltage(PWMC_Handle_t *pHandle, alphabeta_t Valfa_b
   * @param  pHandle: Handler of the current instance of the PWM component.
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 停止或禁用 PWMC_SwitchOffPWM 对应的外设与控制流程。 */
 __weak void PWMC_SwitchOffPWM(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -356,6 +361,7 @@ __weak void PWMC_SwitchOffPWM(PWMC_Handle_t *pHandle)
   * @param  pHandle: Handler of the current instance of the PWM component.
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 启动或使能 PWMC_SwitchOnPWM 对应的外设与控制流程。 */
 __weak void PWMC_SwitchOnPWM(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -383,6 +389,7 @@ __weak void PWMC_SwitchOnPWM(PWMC_Handle_t *pHandle)
   *         #CRC_EXEC to execute the offset calibration.
   * @retval true if the current calibration has been completed, **false** if it is
   *         still ongoing.
+  * @note 中文说明：执行 PWMC_CurrentReadingCalibr 对应的模块功能。
   */
 __weak bool PWMC_CurrentReadingCalibr(PWMC_Handle_t *pHandle, CRCAction_t action)
 {
@@ -444,6 +451,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @param out_buf: LPF buffer.
   * @param t: Low pass filter constant.
   * @retval New value after the low pass filter.
+  * @note 中文说明：计算 PWMC_LowPassFilter 对应的电机控制量或数学结果。
   */
 static inline int32_t PWMC_LowPassFilter(int32_t in, int32_t *out_buf, int32_t t)
 {
@@ -485,6 +493,7 @@ __attribute__( ( section ( ".ccmram" ) ) )
   * @param  pHandle: Handler of the current instance of the PWM component.
   * @param  Iqd: Structure that will receive Iq and Id currents.
   * @param  hElAngledpp: Electrical angle.
+  * @note 中文说明：计算 PWMC_CalcPhaseCurrentsEst 对应的电机控制量或数学结果。
   */
 void PWMC_CalcPhaseCurrentsEst(PWMC_Handle_t *pHandle, qd_t Iqd, int16_t hElAngledpp)
 {
@@ -541,6 +550,7 @@ void PWMC_CalcPhaseCurrentsEst(PWMC_Handle_t *pHandle, qd_t Iqd, int16_t hElAngl
   *                Max value: PWM_PERIOD_CYCLES/2 (low sides OFF)
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 启动或使能 PWMC_TurnOnLowSides 对应的外设与控制流程。 */
 __weak void PWMC_TurnOnLowSides(PWMC_Handle_t *pHandle, uint32_t ticks)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -661,6 +671,7 @@ __weak void *PWMC_OVP_Handler(PWMC_Handle_t *pHandle, TIM_TypeDef *TIMx)
   * @param  pHdl: Handler of the current instance of the PWM component.
   * @retval uint16_t Returns #MC_OVER_CURR if an overcurrent has been
   *                  detected since last method call, #MC_NO_FAULTS otherwise.
+  * @note 中文说明：检查 PWMC_IsFaultOccurred 对应的状态、故障或完成条件。
   */
 __weak uint16_t PWMC_IsFaultOccurred(PWMC_Handle_t *pHandle)
 {
@@ -708,6 +719,7 @@ __weak uint16_t PWMC_IsFaultOccurred(PWMC_Handle_t *pHandle)
   *                	  Max value: 65536 (VDD_DAC)
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 设置 PWMC_OCPSetReferenceVoltage 对应的控制参数、目标值或外设配置。 */
 __weak void PWMC_OCPSetReferenceVoltage(PWMC_Handle_t *pHandle, uint16_t hDACVref)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -726,7 +738,8 @@ __weak void PWMC_OCPSetReferenceVoltage(PWMC_Handle_t *pHandle, uint16_t hDACVre
 
 /** @brief Enables Discontinuous PWM mode using the @p pHandle PWMC component.
   *
-  */
+ * @note 中文说明：启动或使能 PWMC_DPWM_ModeEnable 对应的外设与控制流程。
+ */
 __weak void PWMC_DPWM_ModeEnable(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -745,7 +758,8 @@ __weak void PWMC_DPWM_ModeEnable(PWMC_Handle_t *pHandle)
 
 /** @brief Disables Discontinuous PWM mode using the @p pHandle PWMC component.
   *
-  */
+ * @note 中文说明：停止或禁用 PWMC_DPWM_ModeDisable 对应的外设与控制流程。
+ */
 __weak void PWMC_DPWM_ModeDisable(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -767,6 +781,7 @@ __weak void PWMC_DPWM_ModeDisable(PWMC_Handle_t *pHandle)
   * @retval true if DPWM Mode is enabled, **false** otherwise.
   */
 //cstat !MISRAC2012-Rule-8.13
+/** @brief 获取 PWMC_GetDPWM_Mode 对应的状态、配置或计算结果。 */
 __weak bool PWMC_GetDPWM_Mode(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -780,6 +795,7 @@ __weak bool PWMC_GetDPWM_Mode(PWMC_Handle_t *pHandle)
   *
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 启动或使能 PWMC_RLDetectionModeEnable 对应的外设与控制流程。 */
 __weak void PWMC_RLDetectionModeEnable(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -800,6 +816,7 @@ __weak void PWMC_RLDetectionModeEnable(PWMC_Handle_t *pHandle)
   *
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 停止或禁用 PWMC_RLDetectionModeDisable 对应的外设与控制流程。 */
 __weak void PWMC_RLDetectionModeDisable(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -823,6 +840,7 @@ __weak void PWMC_RLDetectionModeDisable(PWMC_Handle_t *pHandle)
   * @param  hDuty: Duty cycle to apply, written in uint16_t.
   * @retval #MC_NO_ERROR if the Duty Cycle could be applied on time for the next PWM period.
   * 		Returns #MC_DURATION otherwise.
+  * @note 中文说明：设置 PWMC_RLDetectionModeSetDuty 对应的控制参数、目标值或外设配置。
   */
 __weak uint16_t PWMC_RLDetectionModeSetDuty(PWMC_Handle_t *pHandle, uint16_t hDuty) //cstat !MISRAC2012-Rule-8.13
 {
@@ -847,6 +865,7 @@ __weak uint16_t PWMC_RLDetectionModeSetDuty(PWMC_Handle_t *pHandle, uint16_t hDu
   *
   */
 //cstat !MISRAC2012-Rule-8.13 !RED-func-no-effect
+/** @brief 启动或使能 PWMC_RLTurnOnLowSidesAndStart 对应的外设与控制流程。 */
 __weak void PWMC_RLTurnOnLowSidesAndStart(PWMC_Handle_t *pHandle)
 {
 #ifdef NULL_PTR_CHECK_PWR_CUR_FDB
@@ -868,6 +887,7 @@ __weak void PWMC_RLTurnOnLowSidesAndStart(PWMC_Handle_t *pHandle)
  *
  * @param pCallBack: Pointer on the callback to get the phase current.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterGetPhaseCurrentsCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterGetPhaseCurrentsCallBack(PWMC_GetPhaseCurr_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -891,6 +911,7 @@ __weak void PWMC_RegisterGetPhaseCurrentsCallBack(PWMC_GetPhaseCurr_Cb_t pCallBa
  *
  * @param pCallBack: Pointer on the generic callback.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterSwitchOffPwmCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterSwitchOffPwmCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -914,6 +935,7 @@ __weak void PWMC_RegisterSwitchOffPwmCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_
  *
  * @param pCallBack: Pointer on the generic callback.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterSwitchonPwmCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterSwitchonPwmCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -937,6 +959,7 @@ __weak void PWMC_RegisterSwitchonPwmCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_H
  *
  * @param pCallBack: Pointer on the generic callback.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterReadingCalibrationCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterReadingCalibrationCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -959,6 +982,7 @@ __weak void PWMC_RegisterReadingCalibrationCallBack(PWMC_Generic_Cb_t pCallBack,
  *
  * @param pCallBack: Pointer on the callback which turns low sides on.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterTurnOnLowSidesCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterTurnOnLowSidesCallBack(PWMC_TurnOnLowSides_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -981,6 +1005,7 @@ __weak void PWMC_RegisterTurnOnLowSidesCallBack(PWMC_TurnOnLowSides_Cb_t pCallBa
  *
  * @param pCallBack: Pointer on the callback which sets the sampling point depending on the sector.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterSampPointSectXCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterSampPointSectXCallBack(PWMC_SetSampPointSectX_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -1004,6 +1029,7 @@ __weak void PWMC_RegisterSampPointSectXCallBack(PWMC_SetSampPointSectX_Cb_t pCal
  *
  * @param pCallBack: Pointer on the callback which sets the reference voltage.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterOCPSetRefVoltageCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterOCPSetRefVoltageCallBack(PWMC_SetOcpRefVolt_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -1026,6 +1052,7 @@ __weak void PWMC_RegisterOCPSetRefVoltageCallBack(PWMC_SetOcpRefVolt_Cb_t pCallB
  *
  * @param pCallBack: Pointer on the generic callback.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterRLDetectionModeEnableCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterRLDetectionModeEnableCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -1048,6 +1075,7 @@ __weak void PWMC_RegisterRLDetectionModeEnableCallBack(PWMC_Generic_Cb_t pCallBa
  *
  * @param pCallBack: Pointer on the generic callback.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterRLDetectionModeDisableCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterRLDetectionModeDisableCallBack(PWMC_Generic_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {
@@ -1071,6 +1099,7 @@ __weak void PWMC_RegisterRLDetectionModeDisableCallBack(PWMC_Generic_Cb_t pCallB
  *
  * @param pCallBack: Pointer on the callback which sets the duty cycle.
  * @param pHandle: Handler of the current instance of the PWMC component.
+ * @note 中文说明：注册 PWMC_RegisterRLDetectionModeSetDutyCallBack 对应的回调函数或通信接口。
  */
 __weak void PWMC_RegisterRLDetectionModeSetDutyCallBack(PWMC_RLDetectSetDuty_Cb_t pCallBack, PWMC_Handle_t *pHandle)
 {

@@ -50,6 +50,7 @@
   * When this function is called, TIM1 and/or TIM8 must be in a frozen state
   * with CNT, ARR, REP RATE and trigger correctly set (these settings are
   * usually performed in the Init method accordingly with the configuration)
+  * @note 中文说明：启动或使能 startTimers 对应的外设与控制流程。
   */
 __weak void startTimers(void)
 {
@@ -93,6 +94,7 @@ __weak void startTimers(void)
   * @param  cnt Polarization counter value.
   */
 //cstat !MISRAC2012-Rule-8.13
+/** @brief 执行 waitForPolarizationEnd 对应的模块功能。 */
 __weak void waitForPolarizationEnd(TIM_TypeDef *TIMx, uint16_t  *SWerror, uint8_t repCnt, volatile uint8_t *cnt)
 {
 #ifdef NULL_PTR_CHECK_POW_COM

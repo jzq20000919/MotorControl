@@ -70,6 +70,7 @@
   * @retval none.
   *
   * - Called once right after object creation at initialization of the whole MC core.
+  * @note 中文说明：初始化 STC_Init 所属模块、外设或运行状态。
   */
 __weak void STC_Init(SpeednTorqCtrl_Handle_t *pHandle, PID_Handle_t *pPI, SpeednPosFdbk_Handle_t *SPD_Handle)
 {
@@ -101,6 +102,7 @@ __weak void STC_Init(SpeednTorqCtrl_Handle_t *pHandle, PID_Handle_t *pPI, Speedn
   * @retval none
   *
   * - Called during tasks execution of the MC state machine into MediumFrequencyTask.
+  * @note 中文说明：设置 STC_SetSpeedSensor 对应的控制参数、目标值或外设配置。
   */
 __weak void STC_SetSpeedSensor(SpeednTorqCtrl_Handle_t *pHandle, SpeednPosFdbk_Handle_t *SPD_Handle)
 {
@@ -124,6 +126,7 @@ __weak void STC_SetSpeedSensor(SpeednTorqCtrl_Handle_t *pHandle, SpeednPosFdbk_H
   * @retval none.
   *
   * - Called before each motor restart.
+  * @note 中文说明：清除或确认 STC_Clear 对应的状态与历史数据。
   */
 __weak void STC_Clear(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -161,6 +164,7 @@ __weak void STC_Clear(SpeednTorqCtrl_Handle_t *pHandle)
   *         the unit defined by [SPEED_UNIT](measurement_units.md).
   *
   * - Called at MC boot procedure and for speed monitoring through MotorPilote.
+  * @note 中文说明：获取 STC_GetMecSpeedRefUnit 对应的状态、配置或计算结果。
   */
 __weak int16_t STC_GetMecSpeedRefUnit(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -192,6 +196,7 @@ __weak int16_t STC_GetMecSpeedRefUnit(SpeednTorqCtrl_Handle_t *pHandle)
   * is possible to use the formula:\n
   * Current(Amp) = [Current(digit) * Vdd micro] / [65536 * Rshunt * Aop]
   * - Called during #STC_ExecRamp execution.
+  * @note 中文说明：获取 STC_GetTorqueRef 对应的状态、配置或计算结果。
   */
 static inline int16_t STC_GetTorqueRef(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -231,6 +236,7 @@ static inline int16_t STC_GetTorqueRef(SpeednTorqCtrl_Handle_t *pHandle)
   * maintaining the last value of Iq by clearing
   *  @ref SpeednTorqCtrl_Handle_t::RampRemainingStep "RampRemainingStep".
   * - Called generally before Starting the execution of a ramp.
+  * @note 中文说明：设置 STC_SetControlMode 对应的控制参数、目标值或外设配置。
   */
 __weak void STC_SetControlMode(SpeednTorqCtrl_Handle_t *pHandle, MC_ControlMode_t bMode)
 {
@@ -278,6 +284,7 @@ __weak void STC_SetControlMode(SpeednTorqCtrl_Handle_t *pHandle, MC_ControlMode_
   * @ref EncAlignCtrl "Encoder Alignment Control",
   * @ref PositionControl "Position Control" loop or
   * speed regulation with @ref SpeedRegulatorPotentiometer Speed potentiometer.
+  * @note 中文说明：执行 STC_ExecRamp 对应的周期任务或电机控制流程。
   */
 __weak bool STC_ExecRamp(SpeednTorqCtrl_Handle_t *pHandle, int16_t hTargetFinal, uint32_t hDurationms)
 {
@@ -401,6 +408,7 @@ __weak bool STC_ExecRamp(SpeednTorqCtrl_Handle_t *pHandle, int16_t hTargetFinal,
   * - Must be called at fixed time equal to hSTCFrequencyHz. It is called
   * passing as parameter the speed sensor used to perform the speed regulation.
   * - Called during START and ALIGNEMENT states of the MC state machine into MediumFrequencyTask.
+  * @note 中文说明：计算 STC_CalcTorqueReference 对应的电机控制量或数学结果。
   */
 __weak int16_t STC_CalcTorqueReference(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -491,6 +499,7 @@ __weak int16_t STC_CalcTorqueReference(SpeednTorqCtrl_Handle_t *pHandle)
   *
   * - It is the first command to STC after the start of speed ramp execution.
   * - Called during the boot phase of the MC process.
+  * @note 中文说明：获取 STC_GetMecSpeedRefUnitDefault 对应的状态、配置或计算结果。
   */
 __weak int16_t STC_GetMecSpeedRefUnitDefault(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -508,6 +517,7 @@ __weak int16_t STC_GetMecSpeedRefUnitDefault(SpeednTorqCtrl_Handle_t *pHandle)
   * @param  pHandle: handler of the current instance of the SpeednTorqCtrl component.
   *
   * - Not used into current implementation.
+  * @note 中文说明：获取 STC_GetMaxAppPositiveMecSpeedUnit 对应的状态、配置或计算结果。
   */
 __weak uint16_t STC_GetMaxAppPositiveMecSpeedUnit(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -525,6 +535,7 @@ __weak uint16_t STC_GetMaxAppPositiveMecSpeedUnit(SpeednTorqCtrl_Handle_t *pHand
   * @param  pHandle: handler of the current instance of the SpeednTorqCtrl component.
   *
   * - Not used into current implementation.
+  * @note 中文说明：获取 STC_GetMinAppNegativeMecSpeedUnit 对应的状态、配置或计算结果。
   */
 __weak int16_t STC_GetMinAppNegativeMecSpeedUnit(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -541,6 +552,7 @@ __weak int16_t STC_GetMinAppNegativeMecSpeedUnit(SpeednTorqCtrl_Handle_t *pHandl
   * @retval bool returning true if the command is executed, false otherwise.
   *
   * - Not used into current implementation.
+  * @note 中文说明：停止或禁用 STC_StopSpeedRamp 对应的外设与控制流程。
   */
 __weak bool STC_StopSpeedRamp(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -570,6 +582,7 @@ __weak bool STC_StopSpeedRamp(SpeednTorqCtrl_Handle_t *pHandle)
   * @retval default values of Iqdref.
   *
   * - Called during the boot phase of the MC process.
+  * @note 中文说明：获取 STC_GetDefaultIqdref 对应的状态、配置或计算结果。
   */
 __weak qd_t STC_GetDefaultIqdref(SpeednTorqCtrl_Handle_t *pHandle)
 {
@@ -599,6 +612,7 @@ __weak qd_t STC_GetDefaultIqdref(SpeednTorqCtrl_Handle_t *pHandle)
   *
   * - Called during the CHARGE_BOOT_CAP, SWITCH_OVER and WAIT_STOP_MOTOR states of the MC state machine
   * into MediumFrequencyTask to initialize the speed reference.
+  * @note 中文说明：执行 STC_ForceSpeedReferenceToCurrentSpeed 对应的模块功能。
   */
 __weak void STC_ForceSpeedReferenceToCurrentSpeed(SpeednTorqCtrl_Handle_t *pHandle)
 {
