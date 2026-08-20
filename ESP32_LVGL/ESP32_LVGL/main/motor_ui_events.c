@@ -10,7 +10,7 @@
 #define UI_SPEED_LIMIT_RPM     2600
 #define UI_SWIPE_MIN_DISTANCE  45
 
-static motor_ui_event_context_t s_context;
+static   s_context;
 static lv_point_t s_swipe_start;
 static bool s_swipe_tracking;
 
@@ -385,7 +385,8 @@ void motor_ui_mqtt_motor_event(lv_event_t *event)
 void motor_ui_speed_slider_event(lv_event_t *event)
 {
     const lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_PRESSED) {
+    if (code == LV_EVENT_PRESSED) 
+    {
         *s_context.speed_dragging = true;
         return;
     }

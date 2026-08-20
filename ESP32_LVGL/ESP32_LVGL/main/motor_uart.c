@@ -26,7 +26,7 @@ typedef struct
 {
     MotorUart_Command_t command;
     int32_t value;
-} motor_uart_request_t;//串口命令回复
+} motor_uart_request_t;//串口命令结构体
 
 typedef struct
 {
@@ -35,9 +35,9 @@ typedef struct
 } motor_uart_parser_t;
 
 static const char *TAG = "MOTOR_UART";
-static QueueHandle_t s_control_queue;
+static QueueHandle_t s_control_queue;//队列变量
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
-static motor_uart_snapshot_t s_snapshot;
+static motor_uart_snapshot_t s_snapshot;//反馈快照信息，包括所有显示的状态和诊断信息
 static motor_uart_parser_t s_parser;
 static uint8_t s_command_sequence;
 static uint32_t s_last_telemetry_ms;
@@ -173,7 +173,7 @@ static esp_err_t motor_uart_transmit(
     frame[4] = sequence;
     frame[5] = MOTOR_UART_COMMAND_PAYLOAD_SIZE;
     frame[6] = (uint8_t)command;
-    MotorUart_WriteS32(&frame[7], value);
+    MotorUart_WriteS32(&frame[7], value);//从第7字节开始填入4字节数值
     crc = motor_uart_crc16(&frame[2], 4U + MOTOR_UART_COMMAND_PAYLOAD_SIZE);
     MotorUart_WriteU16(&frame[6U + MOTOR_UART_COMMAND_PAYLOAD_SIZE], crc);
 
@@ -199,19 +199,18 @@ static esp_err_t motor_uart_transmit(
  * @param command 需要入队的命令操作码。
  * @param value 与命令关联的参数值。
  */
-static void motor_uart_queue_control(
-    MotorUart_Command_t command,
-    int32_t value)
+static void motor_uart_queue_control(MotorUart_Command_t command,int32_t value)
 {
-    const motor_uart_request_t request = {
+    const motor_uart_request_t request = 
+    {
         .command = command,
         .value = value,
     };
-
-    if (xQueueSend(s_control_queue, &request, 0) != pdTRUE) {
-        motor_uart_request_t discarded;
-        (void)xQueueReceive(s_control_queue, &discarded, 0);
-        (void)xQueueSend(s_control_queue, &request, 0);
+    if (xQueueSend(s_control_queue, &request, 0) != pdTRUE)//如果满了则丢弃最旧命令
+     {
+        motor_uart_request_t discarded;//定义一个motor_uart_request_t类型的变量作为最旧命令
+        (void)xQueueReceive(s_control_queue, &discarded, 0);//从队列取出一条命令放到最旧命令的地址。空出一个队列格子
+        (void)xQueueSend(s_control_queue, &request, 0);//将最新的命令塞入队列
     }
 }
 
@@ -241,21 +240,15 @@ static void motor_uart_parse_telemetry(
         payload[1] == MOTOR_UART_MODE_POSITION
             ? MOTOR_UART_MODE_POSITION
             : MOTOR_UART_MODE_SPEED;
-    s_snapshot.faults = MotorUart_ReadU16(&payload[2]);
-    s_snapshot.measured_speed_rpm =
-        MotorUart_ReadS16(&payload[4]);
-    s_snapshot.reference_speed_rpm =
-        MotorUart_ReadS16(&payload[6]);
-    s_snapshot.current_position_cdeg =
-        MotorUart_ReadU16(&payload[8]);
-    s_snapshot.target_position_cdeg =
-        MotorUart_ReadU16(&payload[10]);
-    s_snapshot.position_error_cdeg =
-        MotorUart_ReadS16(&payload[12]);
+    s_snapshot.faults = MotorUart_ReadU16(&payload[2]);//取出电机故障位集合，16位无符号整数
+    s_snapshot.measured_speed_rpm =MotorUart_ReadS16(&payload[4]);//从payload[4]和payload[5]中读取有符号16位整数，表示实测机械转速，单位rpm
+    s_snapshot.reference_speed_rpm =MotorUart_ReadS16(&payload[6]);
+    s_snapshot.current_position_cdeg =MotorUart_ReadU16(&payload[8]);
+    s_snapshot.target_position_cdeg =MotorUart_ReadU16(&payload[10]);
+    s_snapshot.position_error_cdeg =MotorUart_ReadS16(&payload[12]);
     s_snapshot.iq_ma = MotorUart_ReadS16(&payload[14]);
     s_snapshot.id_ma = MotorUart_ReadS16(&payload[16]);
-    s_snapshot.iq_reference_ma =
-        MotorUart_ReadS16(&payload[18]);
+    s_snapshot.iq_reference_ma =MotorUart_ReadS16(&payload[18]);
     s_snapshot.uq_mv = MotorUart_ReadS16(&payload[20]);
     s_snapshot.ud_mv = MotorUart_ReadS16(&payload[22]);
     s_snapshot.received_frames++;
@@ -279,18 +272,21 @@ static void motor_uart_parse_byte(uint8_t byte)
     uint16_t calculated_crc;
 
     if (s_parser.length == 0U) {
-        if (byte == MOTOR_UART_SOF0) {
-            s_parser.buffer[s_parser.length++] = byte;
+        if (byte == MOTOR_UART_SOF0) 
+        {
+            s_parser.buffer[s_parser.length++] = byte;//是0XA5则保留
         }
-        return;
+        return;//不是则返回
     }
 
     if (s_parser.length == 1U) {
-        if (byte == MOTOR_UART_SOF1) {
-            s_parser.buffer[s_parser.length++] = byte;
-        } else {
-            s_parser.length =
-                byte == MOTOR_UART_SOF0 ? 1U : 0U;
+        if (byte == MOTOR_UART_SOF1) 
+        {
+            s_parser.buffer[s_parser.length++] = byte;//是0X5A则保留
+        } 
+        else 
+        {
+            s_parser.length = byte == MOTOR_UART_SOF0 ? 1U : 0U;
         }
         return;
     }
@@ -311,13 +307,13 @@ static void motor_uart_parse_byte(uint8_t byte)
         return;
     }
 
-    expected_length = (uint16_t)(6U + payload_length + 2U);
+    expected_length = (uint16_t)(6U + payload_length + 2U);//完整帧长度
     if (s_parser.length < expected_length) {
         return;
     }
-
-    received_crc = MotorUart_ReadU16(&s_parser.buffer[6U + payload_length]);
-    calculated_crc = motor_uart_crc16(&s_parser.buffer[2], (uint16_t)(4U + payload_length));
+    //收集齐完整一帧后
+    received_crc = MotorUart_ReadU16(&s_parser.buffer[6U + payload_length]);//从一帧中读取CRC
+    calculated_crc = motor_uart_crc16(&s_parser.buffer[2], (uint16_t)(4U + payload_length));//根据数据计算出CRC
 
     if (received_crc != calculated_crc) {
         portENTER_CRITICAL(&s_lock);
@@ -326,7 +322,7 @@ static void motor_uart_parse_byte(uint8_t byte)
     } else if (
         s_parser.buffer[2] == MOTOR_UART_PROTOCOL_VERSION &&
         s_parser.buffer[3] == MOTOR_UART_FRAME_TELEMETRY) {
-        motor_uart_parse_telemetry(&s_parser.buffer[6], payload_length);
+        motor_uart_parse_telemetry(&s_parser.buffer[6], payload_length);//协议版本检查
     } else {
         portENTER_CRITICAL(&s_lock);
         s_snapshot.protocol_errors++;
@@ -343,25 +339,25 @@ static void motor_uart_parse_byte(uint8_t byte)
 static void motor_uart_rx_task(void *argument)
 {
     (void)argument;
-    uint8_t received[96];
-
-    while (true) {
+    uint8_t received[96];//定义接收数组，96字节
+    while (true) 
+    {
         motor_uart_apply_reconnect();
-
-        const int count = uart_read_bytes(MOTOR_UART_PORT, received, sizeof(received), pdMS_TO_TICKS(10));
-        if (count > 0) {
+        const int count = uart_read_bytes(MOTOR_UART_PORT, received, sizeof(received), pdMS_TO_TICKS(10));//每次从接收缓冲区接收最多96字节数据
+        if (count > 0)  
+        {
             portENTER_CRITICAL(&s_lock);
             s_snapshot.received_bytes += (uint32_t)count;
             portEXIT_CRITICAL(&s_lock);
         }
-        for (int i = 0; i < count; i++) {
+        for (int i = 0; i < count; i++)
+        {
             motor_uart_parse_byte(received[i]);
         }
-
         portENTER_CRITICAL(&s_lock);
-        if (s_snapshot.link_active &&
-            (motor_uart_now_ms() - s_last_telemetry_ms >
-             MOTOR_UART_LINK_TIMEOUT_MS)) {
+        if (s_snapshot.link_active &&(motor_uart_now_ms() - s_last_telemetry_ms >
+             MOTOR_UART_LINK_TIMEOUT_MS)) 
+        {
             s_snapshot.link_active = false;
         }
         portEXIT_CRITICAL(&s_lock);
@@ -379,23 +375,23 @@ static void motor_uart_rx_task(void *argument)
 static void motor_uart_tx_task(void *argument)
 {
     (void)argument;
-    TickType_t last_wake = xTaskGetTickCount();
-    uint32_t next_ping_ms = motor_uart_now_ms();
+    TickType_t last_wake = xTaskGetTickCount();//记录任务周期时间基准
+    uint32_t next_ping_ms = motor_uart_now_ms();//下一次
 
     while (true) {
         motor_uart_request_t request;
         uint8_t budget = 4U;
         bool reconnecting;
         bool control_enabled;
-
         portENTER_CRITICAL(&s_lock);
         reconnecting = s_snapshot.reconnecting;
-        control_enabled = s_control_enabled;
+        control_enabled = s_control_enabled;//允许UART控制
         portEXIT_CRITICAL(&s_lock);
-        if (reconnecting) {
-            vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_UART_TX_TASK_PERIOD_MS));
+        if (reconnecting) 
+        {
+            vTaskDelayUntil(&last_wake, pdMS_TO_TICK(MOTOR_UART_TX_TASK_PERIOD_MS));
             continue;
-        }
+        }//如果UART正在重连则延迟2ms并跳过本次循环
 
         while (control_enabled && budget-- > 0U &&
                xQueueReceive(s_control_queue, &request, 0) == pdTRUE) {
@@ -447,6 +443,7 @@ esp_err_t motor_uart_init(void)
     if (s_initialized) {
         return ESP_OK;
     }
+    //配置结构体
     const uart_config_t config = {
         .baud_rate = MOTOR_UART_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -460,7 +457,7 @@ esp_err_t motor_uart_init(void)
     s_control_enabled = false;
     s_snapshot.mode = MOTOR_UART_MODE_SPEED;
     s_snapshot.baud_rate = MOTOR_UART_BAUD_RATE;
-    s_control_queue = xQueueCreate(MOTOR_UART_CONTROL_QUEUE_SIZE, sizeof(motor_uart_request_t));
+    s_control_queue = xQueueCreate(MOTOR_UART_CONTROL_QUEUE_SIZE, sizeof(motor_uart_request_t));//创建一个rtos队列，队列大小为8，队列中每个元素的大小为motor_uart_request_t结构体的大小
     if (s_control_queue == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -470,9 +467,11 @@ esp_err_t motor_uart_init(void)
     ESP_RETURN_ON_ERROR(uart_set_pin( MOTOR_UART_PORT, MOTOR_UART_TX_GPIO, MOTOR_UART_RX_GPIO, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG, "uart_set_pin failed");
     ESP_RETURN_ON_ERROR(uart_flush_input(MOTOR_UART_PORT), TAG, "uart_flush_input failed");
 
-    if (xTaskCreate(motor_uart_rx_task, "motor_uart_rx", 3072, NULL, 8, &s_rx_task) != pdPASS ||
-        xTaskCreate(motor_uart_tx_task, "motor_uart_tx", 3072, NULL, 8, &s_tx_task) != pdPASS) {
-        if (s_rx_task != NULL) {
+    if (xTaskCreate(motor_uart_rx_task, "motor_uart_rx", 3072, NULL, 8, &s_rx_task) != pdPASS 
+        ||xTaskCreate(motor_uart_tx_task, "motor_uart_tx", 3072, NULL, 8, &s_tx_task) != pdPASS) 
+    {
+        if (s_rx_task != NULL) 
+        {
             vTaskDelete(s_rx_task);
             s_rx_task = NULL;
         }

@@ -25,8 +25,8 @@
 
 typedef struct
 {
-    MotorCan_Command_t command;
-    int32_t value;
+    MotorCan_Command_t command; /**< 等待 TX 任务发送的 CAN 电机命令码。 */
+    int32_t value;              /**< 命令携带的有符号参数；具体单位由 command 决定。 */
 } motor_can_request_t;
 
 /*
@@ -35,31 +35,32 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t identifier;
-    uint8_t data_length;
-    bool extended;
-    bool remote;
-    uint8_t data[MOTOR_CAN_FRAME_SIZE];
+    uint32_t identifier;                    /**< 接收帧的 11 位或 29 位 CAN 标识符。 */
+    uint8_t data_length;                    /**< 接收帧的有效负载长度，单位为字节。 */
+    bool extended;                          /**< 为 true 时表示扩展帧，为 false 时表示标准帧。 */
+    bool remote;                            /**< 为 true 时表示远程帧，为 false 时表示数据帧。 */
+    uint8_t data[MOTOR_CAN_FRAME_SIZE];      /**< 从驱动帧复制出的 8 字节自包含负载。 */
 } motor_can_rx_frame_t;
 
-static const char *TAG = "MOTOR_CAN";
-static twai_node_handle_t s_twai_node;
-static QueueHandle_t s_control_queue;
-static QueueHandle_t s_rx_queue;
-static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
-static motor_can_snapshot_t s_snapshot;
-static int16_t s_pending_speed_rpm;
-static uint16_t s_pending_position_cdeg;
-static bool s_speed_dirty;
-static bool s_position_dirty;
-static bool s_control_enabled;
-static uint8_t s_tx_sequence;
-static int64_t s_last_status_us;
-static bool s_recovery_requested;
-static bool s_transceiver_test_passed;
-static uint32_t s_pending_error_flags;
-static int64_t s_last_error_log_us;
-static uint8_t s_tx_data[MOTOR_CAN_FRAME_SIZE];
+static const char *TAG = "MOTOR_CAN";       /**< 本模块输出 ESP-IDF 日志时使用的标签。 */
+static twai_node_handle_t s_twai_node;      /**< ESP-IDF 片上 TWAI 控制器节点句柄。 */
+static QueueHandle_t s_control_queue;       /**< 保存 START、STOP、MODE 等离散控制请求的队列。 */
+static QueueHandle_t s_rx_queue;            /**< ISR 向 RX 任务传递完整接收帧的队列。 */
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED; /**< 保护快照和跨任务共享状态的自旋锁。 */
+static motor_can_snapshot_t s_snapshot;     /**< 最近一次 CAN 遥测及诊断状态的统一快照。 */
+static int16_t s_pending_speed_rpm;         /**< 等待发送的最新速度目标，单位为 rpm。 */
+static uint16_t s_pending_position_cdeg;    /**< 等待发送的最新单圈位置目标，单位为 0.01°。 */
+static bool s_speed_dirty;                  /**< 为 true 时表示最新速度目标尚未成功发送。 */
+static bool s_position_dirty;               /**< 为 true 时表示最新位置目标尚未成功发送。 */
+static bool s_control_enabled;              /**< 为 true 时 CAN 通道拥有电机命令发送权。 */
+static uint8_t s_tx_sequence;               /**< CAN 命令帧的递增序列号，用于诊断命令先后顺序。 */
+static int64_t s_last_status_us;            /**< 最近收到 0x180 状态帧的时间戳，单位为 μs。 */
+static bool s_recovery_requested;           /**< 为 true 时表示已经请求 TWAI 从 Bus-Off 恢复。 */
+static bool s_transceiver_test_passed;      /**< 最近一次外部 CAN 收发器 GPIO 自检结果。 */
+static uint32_t s_pending_error_flags;      /**< ISR 累积、等待任务读取的 TWAI 错误位集合。 */
+static int64_t s_last_error_log_us;         /**< 最近输出 CAN 错误日志的时间戳，单位为 μs。 */
+static uint8_t s_tx_data[MOTOR_CAN_FRAME_SIZE]; /**< 持久存在的 CAN 命令帧发送负载。 */
+/** ESP-IDF TWAI 发送帧描述符；buffer 始终指向持久数组 s_tx_data。 */
 static twai_frame_t s_tx_frame = {
     .header = {
         .id = MOTOR_CAN_ID_COMMAND,
@@ -68,10 +69,10 @@ static twai_frame_t s_tx_frame = {
     .buffer = s_tx_data,
     .buffer_len = sizeof(s_tx_data),
 };
-static bool s_tx_pending;
-static TaskHandle_t s_rx_task;
-static TaskHandle_t s_tx_task;
-static bool s_initialized;
+static bool s_tx_pending;                   /**< 为 true 时驱动仍可能持有 s_tx_frame/s_tx_data。 */
+static TaskHandle_t s_rx_task;              /**< CAN 接收解析任务的 FreeRTOS 句柄。 */
+static TaskHandle_t s_tx_task;              /**< CAN 命令发送与总线维护任务的 FreeRTOS 句柄。 */
+static bool s_initialized;                  /**< 为 true 时 TWAI、队列和工作任务均已创建。 */
 
 /**
  * @brief 对外部 CAN 收发器执行 GPIO 电平连通性自检。
@@ -82,6 +83,7 @@ static bool s_initialized;
  */
 static bool motor_can_transceiver_self_test(void)
 {
+    /** 将 CAN RXD 配置为带上拉输入，用于读取收发器反馈电平。 */
     const gpio_config_t rx_config = {
         .pin_bit_mask = 1ULL << MOTOR_CAN_RX_GPIO,
         .mode = GPIO_MODE_INPUT,
@@ -89,6 +91,7 @@ static bool motor_can_transceiver_self_test(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
+    /** 将 CAN TXD 临时配置为普通输出，用于产生显性/隐性测试电平。 */
     const gpio_config_t tx_config = {
         .pin_bit_mask = 1ULL << MOTOR_CAN_TX_GPIO,
         .mode = GPIO_MODE_OUTPUT,
@@ -102,15 +105,19 @@ static bool motor_can_transceiver_self_test(void)
 
     gpio_set_level(MOTOR_CAN_TX_GPIO, 1);
     esp_rom_delay_us(10);
+    /** TXD 输出隐性高电平时读取到的 RXD 电平。 */
     const int recessive_level = gpio_get_level(MOTOR_CAN_RX_GPIO);
 
     gpio_set_level(MOTOR_CAN_TX_GPIO, 0);
     esp_rom_delay_us(10);
+    /** TXD 输出显性低电平时读取到的 RXD 电平。 */
     const int dominant_level = gpio_get_level(MOTOR_CAN_RX_GPIO);
 
     gpio_set_level(MOTOR_CAN_TX_GPIO, 1);
     esp_rom_delay_us(10);
+    /** TXD 恢复高电平后读取到的 RXD 电平，用于确认链路能够释放。 */
     const int released_level = gpio_get_level(MOTOR_CAN_RX_GPIO);
+    /** 三次 RXD 采样是否都符合收发器本地回读预期。 */
     const bool passed =
         (recessive_level == 1) &&
         (dominant_level == 0) &&
@@ -144,6 +151,7 @@ static void motor_can_record_tx_error(void)
 static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
 {
     if (command != MOTOR_CAN_CMD_NOP && command != MOTOR_CAN_CMD_PING) {
+        /** 当前 CAN 通道是否获得发送电机控制命令的权限。 */
         bool enabled;
         portENTER_CRITICAL(&s_lock);
         enabled = s_control_enabled;
@@ -157,6 +165,7 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
      * 不得覆盖持久发送缓冲区。
      */
     if (s_tx_pending) {
+        /** 等待上一持久帧发送完成的结果，成功后才可覆盖发送缓冲区。 */
         const esp_err_t pending_result =
             twai_node_transmit_wait_all_done(s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
         if (pending_result != ESP_OK) {
@@ -185,7 +194,8 @@ static esp_err_t motor_can_transmit(MotorCan_Command_t command, int32_t value)
         break;
     }
 
-    esp_err_t result = twai_node_transmit(s_twai_node, &s_tx_frame, MOTOR_CAN_TX_TIMEOUT_MS);
+    /** 当前命令帧排队及等待物理发送完成的结果。 */
+    esp_err_t result = twai_node_transmit(s_twai_node, &s_tx_frame,MOTOR_CAN_TX_TIMEOUT_MS);
     if (result == ESP_OK) {
         s_tx_pending = true;
         result = twai_node_transmit_wait_all_done(s_twai_node, MOTOR_CAN_TX_TIMEOUT_MS);
@@ -214,12 +224,14 @@ static void motor_can_queue_control(MotorCan_Command_t command, int32_t value)
         return;
     }
 
+    /** 由命令码及参数组成、准备写入控制队列的请求。 */
     const motor_can_request_t request = {
         .command = command,
         .value = value,
     };
 
     if (xQueueSend(s_control_queue, &request, 0) != pdTRUE) {
+        /** 队列已满时移除的最旧请求，用于给最新用户操作腾出空间。 */
         motor_can_request_t discarded;
         (void)xQueueReceive(s_control_queue, &discarded, 0);
         (void)xQueueSend(s_control_queue, &request, 0);
@@ -236,7 +248,9 @@ static void motor_can_parse_status(const motor_can_rx_frame_t *frame)
         return;
     }
 
+    /** 状态帧 byte3 中由 STM32 编码的模式、运行和故障标志。 */
     const uint8_t flags = frame->data[3];
+    /** 收到有效状态帧时的单调时钟时间戳，单位为 μs。 */
     const int64_t now_us = esp_timer_get_time();
 
     portENTER_CRITICAL(&s_lock);
@@ -308,11 +322,14 @@ static bool IRAM_ATTR motor_can_rx_callback(
 {
     (void)event_data;
 
+    /** 自包含的接收帧副本，将在 ISR 结束前写入 RX 队列。 */
     motor_can_rx_frame_t received = {0};
+    /** 传给 TWAI ISR 接收 API 的临时帧描述符，其负载写入 received.data。 */
     twai_frame_t frame = {
         .buffer = received.data,
         .buffer_len = sizeof(received.data),
     };
+    /** 指示入队操作是否唤醒了更高优先级任务。 */
     BaseType_t task_woken = pdFALSE;
 
     if (twai_node_receive_from_isr(handle, &frame) == ESP_OK) {
@@ -353,6 +370,7 @@ static bool IRAM_ATTR motor_can_error_callback(
 static void motor_can_rx_task(void *argument)
 {
     (void)argument;
+    /** 从 RX 队列取出的完整 CAN 帧，在任务上下文中进行校验与解析。 */
     motor_can_rx_frame_t frame;
 
     for (;;) {
@@ -386,26 +404,30 @@ static void motor_can_rx_task(void *argument)
  */
 static bool motor_can_service_bus_state(void)
 {
+    /** TWAI 控制器当前状态、发送错误计数和接收错误计数。 */
     twai_node_status_t status;
     if (twai_node_get_info(s_twai_node, &status, NULL) != ESP_OK) {
         return false;
     }
 
-    uint32_t error_flags;
-    bool transceiver_fault;
+    uint32_t error_flags;       /**< 本轮从 ISR 错误位集合中取出的待处理标志。 */
+    bool transceiver_fault;     /**< 快照记录的外部 CAN 收发器自检故障状态。 */
     portENTER_CRITICAL(&s_lock);
     error_flags = s_pending_error_flags;
     s_pending_error_flags = 0U;
     transceiver_fault = s_snapshot.transceiver_fault;
     portEXIT_CRITICAL(&s_lock);
+    /** 查询与限流错误日志所使用的当前单调时间，单位为 μs。 */
     const int64_t now_us = esp_timer_get_time();
     if ((error_flags != 0U) &&
         ((now_us - s_last_error_log_us) >= 1000000LL)) {
+        /** 将原始错误位映射为 ACK、位、格式、填充和仲裁错误字段。 */
         const twai_error_flags_t decoded = {.val = error_flags};
         s_last_error_log_us = now_us;
         ESP_LOGW(TAG, "CAN error flags=0x%02lx ACK=%u BIT=%u FORM=%u STUFF=%u ARB=%u " "RXD=%d LOCAL=%s", (unsigned long)error_flags, (unsigned)decoded.ack_err, (unsigned)decoded.bit_err, (unsigned)decoded.form_err, (unsigned)decoded.stuff_err, (unsigned)decoded.arb_lost, gpio_get_level(MOTOR_CAN_RX_GPIO), transceiver_fault ? "WARN" : "PASS");
     }
 
+    /** 控制器当前是否已因错误计数过高进入 Bus-Off 状态。 */
     const bool bus_off = status.state == TWAI_ERROR_BUS_OFF;
     portENTER_CRITICAL(&s_lock);
     s_snapshot.bus_off = bus_off;
@@ -464,27 +486,33 @@ static void motor_can_restore_speed_if_latest(int16_t speed_rpm)
 static void motor_can_tx_task(void *argument)
 {
     (void)argument;
+    /** 周期任务的上一次唤醒节拍，用于 vTaskDelayUntil 保持固定周期。 */
     TickType_t last_wake = xTaskGetTickCount();
+    /** 下一次允许发送 PING 心跳的时间戳，单位为 μs。 */
     int64_t next_heartbeat_us = 0;
 
-    for (;;) {
+    for (;;)
+    {
         /*
          * 控制器处于总线关闭状态时，不得取出命令或调用驱动的发送等待接口。
          * 待发送帧保持有效，并在恢复后由驱动重试。
          */
-        if (!motor_can_service_bus_state()) {
+        if (!motor_can_service_bus_state()) 
+        {
             vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(MOTOR_CAN_TX_TASK_PERIOD_MS));
             continue;
         }
 
+        /** 本轮任务开始时读取的 CAN 控制权快照。 */
         bool control_enabled;
         portENTER_CRITICAL(&s_lock);
         control_enabled = s_control_enabled;
         portEXIT_CRITICAL(&s_lock);
 
+        /** 从离散控制队列中取出的待发送命令。 */
         motor_can_request_t request;
-        while (control_enabled &&
-               xQueueReceive(s_control_queue, &request, 0) == pdTRUE) {
+        while (control_enabled &&xQueueReceive(s_control_queue, &request, 0) == pdTRUE) 
+        {
             if (motor_can_transmit(request.command, request.value) != ESP_OK) {
                 /*
                  * START、STOP、MODE 和 ACK 均为边沿触发的界面动作。短暂发送
@@ -495,10 +523,10 @@ static void motor_can_tx_task(void *argument)
             }
         }
 
-        bool send_speed;
-        bool send_position;
-        int16_t speed_rpm;
-        uint16_t position_cdeg;
+        bool send_speed;          /**< 本轮是否需要发送最新速度目标。 */
+        bool send_position;       /**< 本轮是否需要发送最新位置目标。 */
+        int16_t speed_rpm;        /**< 本轮复制出的速度目标，单位为 rpm。 */
+        uint16_t position_cdeg;   /**< 本轮复制出的位置目标，单位为 0.01°。 */
 
         portENTER_CRITICAL(&s_lock);
         send_speed = control_enabled && s_speed_dirty;
@@ -518,6 +546,7 @@ static void motor_can_tx_task(void *argument)
             motor_can_restore_speed_if_latest(speed_rpm);
         }
 
+        /** 当前单调时间，用于判断是否到达下一心跳发送时刻。 */
         const int64_t now_us = esp_timer_get_time();
         if (now_us >= next_heartbeat_us) {
             (void)motor_can_transmit(MOTOR_CAN_CMD_PING, 0);
@@ -549,12 +578,12 @@ static void motor_can_delete_queues(void)
  * 从而与 Core 1 上的界面工作隔离。
  * @return 传输通道就绪时返回 ESP_OK，否则返回内存分配或 TWAI 错误码。
  */
-esp_err_t motor_can_init(void)
+esp_err_t motor_can_init(void)//初始化CAN
 {
     if (s_initialized) {
         return ESP_OK;
     }
-    memset(&s_snapshot, 0, sizeof(s_snapshot));
+    memset(&s_snapshot, 0, sizeof(s_snapshot));//清空
     s_control_enabled = false;
     s_snapshot.mode = MOTOR_CAN_MODE_SPEED;
     s_pending_speed_rpm = 0;
@@ -580,22 +609,23 @@ esp_err_t motor_can_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    const twai_onchip_node_config_t node_config = {
-        .io_cfg = {
+    /** 片上 TWAI 节点的引脚、位率、重试次数及发送队列配置。 */
+    const twai_onchip_node_config_t node_config = 
+    {
+        .io_cfg = 
+        {
             .tx = MOTOR_CAN_TX_GPIO,
             .rx = MOTOR_CAN_RX_GPIO,
             .quanta_clk_out = GPIO_NUM_NC,
             .bus_off_indicator = GPIO_NUM_NC,
         },
-        .bit_timing = {
-            .bitrate = MOTOR_CAN_BITRATE,
-        },
+        .bit_timing = {.bitrate = MOTOR_CAN_BITRATE,},
         .fail_retry_cnt = 3,
         .tx_queue_depth = MOTOR_CAN_TX_QUEUE_DEPTH,
-    };
+    }; 
 
-    esp_err_t result =
-        twai_new_node_onchip(&node_config, &s_twai_node);
+    /** 初始化各 TWAI 资源时复用的 ESP-IDF 返回状态。 */
+    esp_err_t result =twai_new_node_onchip(&node_config, &s_twai_node);
     if (result != ESP_OK) {
         motor_can_delete_queues();
         return result;
@@ -605,9 +635,10 @@ esp_err_t motor_can_init(void)
      * 匹配 0x180～0x183。应用实际使用 0x180～0x182，第四个值用于保证该掩码
      * 能由经典 CAN 控制器表示。
      */
+    /** 仅接收 STM32 反馈 ID 0x180～0x183 的硬件掩码过滤器。 */
     const twai_mask_filter_config_t filter_config = {
         .id = MOTOR_CAN_ID_STATUS,
-        .mask = 0x7FCU,
+        .mask = 0x7FCU,//这个掩码可以让0x180～0x183通过
         .is_ext = false,
         .no_classic = false,
         .no_fd = true,
@@ -620,6 +651,7 @@ esp_err_t motor_can_init(void)
         return result;
     }
 
+    /** TWAI 接收完成和错误事件对应的 ISR 回调表。 */
     const twai_event_callbacks_t callbacks = {
         .on_rx_done = motor_can_rx_callback,
         .on_error = motor_can_error_callback,
@@ -641,6 +673,7 @@ esp_err_t motor_can_init(void)
     }
 
     vTaskDelay(pdMS_TO_TICKS(1));
+    /** TWAI 接管引脚后采集的 RXD 空闲电平，正常隐性状态应为高。 */
     const int rxd_idle_level = gpio_get_level(MOTOR_CAN_RX_GPIO);
     ESP_LOGI(TAG, "Port1 RXD idle level=%d (expected 1); TXD is peripheral output", rxd_idle_level);
     if (rxd_idle_level == 0) {
@@ -719,6 +752,7 @@ void motor_can_get_snapshot(motor_can_snapshot_t *snapshot)
 
     portENTER_CRITICAL(&s_lock);
     *snapshot = s_snapshot;
+    /** 在临界区内复制的最后状态帧时间，离开锁后据此计算链路状态。 */
     const int64_t last_status_us = s_last_status_us;
     portEXIT_CRITICAL(&s_lock);
 

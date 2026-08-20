@@ -22,15 +22,15 @@
 #define MOTOR_CAN_POSITION_MIN_DURATION_MS  (200UL)
 #define MOTOR_CAN_POSITION_CDEG_PER_SECOND  (18000UL)
 
-static FDCAN_HandleTypeDef MotorCan_Handle;
-static bool MotorCan_Ready;
-static uint32_t MotorCan_LastCommandTick;
-static uint32_t MotorCan_LastTelemetryTick;
-static uint32_t MotorCan_LastInitAttemptTick;
-static uint32_t MotorCan_LastRecoveryTick;
-static uint8_t MotorCan_LastSequence;
-static uint8_t MotorCan_LastCommand;
-static bool MotorCan_CommandRejected;
+static FDCAN_HandleTypeDef MotorCan_Handle;       /**< FDCAN1 外设配置及运行状态句柄。 */
+static bool MotorCan_Ready;                      /**< 为 true 时 FDCAN 已初始化、过滤器已配置且节点已启动。 */
+static uint32_t MotorCan_LastCommandTick;        /**< 最近收到有效 ESP32 命令的 HAL 毫秒节拍。 */
+static uint32_t MotorCan_LastTelemetryTick;      /**< 最近一次发送三组遥测帧的 HAL 毫秒节拍。 */
+static uint32_t MotorCan_LastInitAttemptTick;    /**< 最近尝试初始化 FDCAN 的 HAL 毫秒节拍。 */
+static uint32_t MotorCan_LastRecoveryTick;       /**< 最近尝试从 Bus-Off 恢复的 HAL 毫秒节拍。 */
+static uint8_t MotorCan_LastSequence;            /**< 最近接收命令帧中的序列号，用于状态回显与诊断。 */
+static uint8_t MotorCan_LastCommand;             /**< 最近接收命令帧中的命令码，用于状态回显。 */
+static bool MotorCan_CommandRejected;            /**< 为 true 时表示最近一条非 PING 命令未被应用层接受。 */
 
 /** @brief 计算 MotorCan_ClampS16 对应的电机控制量或数学结果。 */
 static int16_t MotorCan_ClampS16(int32_t value)
@@ -63,6 +63,7 @@ static int32_t MotorCan_FloatToS32(float value)
 /** @brief 计算 MotorCan_NormalizeCdeg 对应的电机控制量或数学结果。 */
 static int32_t MotorCan_NormalizeCdeg(int32_t positionCdeg)
 {
+  /* 位置对一圈 36000 个 0.01° 单位取模后的临时结果。 */
   int32_t normalized = positionCdeg % 36000;
   if (normalized < 0)
   {
@@ -81,6 +82,7 @@ static bool MotorCan_LinkActive(uint32_t now)
 /** @brief 编码并发送 MotorCan_Send 对应的数据或通信帧。 */
 static bool MotorCan_Send(uint32_t identifier, const uint8_t data[8])
 {
+  /* 当前待发送经典 CAN 数据帧的 FDCAN 帧头配置。 */
   FDCAN_TxHeaderTypeDef header = {0};
 
   if (HAL_FDCAN_GetTxFifoFreeLevel(&MotorCan_Handle) == 0UL)
@@ -104,12 +106,15 @@ static bool MotorCan_Send(uint32_t identifier, const uint8_t data[8])
 /** @brief 设置 MotorCan_SetNearestSingleTurnPosition 对应的控制参数、目标值或外设配置。 */
 static bool MotorCan_SetNearestSingleTurnPosition(int32_t targetSingleTurnCdeg)
 {
+  /* MCSDK 多圈机械位置换算后的当前位置，单位为 0.01°。 */
   const int32_t currentCdeg = MotorCan_FloatToS32(
     MC_GetCurrentPosition1() * 5729.577951308232F);
+  /* 归一化到 0～35999 范围的当前单圈位置，单位为 0.01°。 */
   const int32_t currentSingleTurn = MotorCan_NormalizeCdeg(currentCdeg);
+  /* 目标与当前位置之间的角差，随后修正为不超过半圈的最短路径。 */
   int32_t delta = MotorCan_NormalizeCdeg(targetSingleTurnCdeg) - currentSingleTurn;
-  uint32_t distance;
-  uint32_t durationMs;
+  uint32_t distance;    /* 最短路径的绝对角距离，单位为 0.01°。 */
+  uint32_t durationMs;  /* 按目标运动速度计算出的轨迹持续时间，单位为 ms。 */
 
   if (delta > 18000)
   {
@@ -132,6 +137,7 @@ static bool MotorCan_SetNearestSingleTurnPosition(int32_t targetSingleTurnCdeg)
 /** @brief 执行 MotorCan_ExecuteCommand 对应的周期任务或电机控制流程。 */
 static bool MotorCan_ExecuteCommand(const uint8_t data[8])
 {
+  /* 命令帧 byte2 中携带的协议命令码。 */
   const MotorCan_Command_t command = (MotorCan_Command_t)data[2];
 
   switch (command)
@@ -173,8 +179,8 @@ static void MotorCan_ProcessRx(void)
   while (HAL_FDCAN_GetRxFifoFillLevel(
            &MotorCan_Handle, FDCAN_RX_FIFO0) > 0UL)
   {
-    FDCAN_RxHeaderTypeDef header;
-    uint8_t data[8];
+    FDCAN_RxHeaderTypeDef header; /* 从 RX FIFO0 读出的帧格式、ID 和长度信息。 */
+    uint8_t data[8];              /* 从 RX FIFO0 读出的 8 字节命令负载。 */
 
     if (HAL_FDCAN_GetRxMessage(
           &MotorCan_Handle, FDCAN_RX_FIFO0, &header, data) != HAL_OK)
@@ -208,6 +214,7 @@ static void MotorCan_ProcessRx(void)
 /** @brief 执行 MotorCan_ServiceBus 对应的模块功能。 */
 static bool MotorCan_ServiceBus(uint32_t now)
 {
+  /* FDCAN 控制器当前 Bus-Off、错误被动等协议状态。 */
   FDCAN_ProtocolStatusTypeDef status = {0};
 
   if (HAL_FDCAN_GetProtocolStatus(&MotorCan_Handle, &status) != HAL_OK)
@@ -246,9 +253,11 @@ static bool MotorCan_ServiceBus(uint32_t now)
 /** @brief 编码并发送 MotorCan_SendStatus 对应的数据或通信帧。 */
 static void MotorCan_SendStatus(uint32_t now)
 {
-  uint8_t data[8] = {0};
-  uint8_t flags = 0U;
+  uint8_t data[8] = {0}; /* ID 0x180 状态遥测帧的 8 字节负载。 */
+  uint8_t flags = 0U;    /* 控制模式、运行、故障、链路和拒绝状态的位集合。 */
+  /* MCSDK 当前故障位集合，将写入状态帧 byte6～7。 */
   const uint16_t currentFaults = MC_GetCurrentFaultsMotor1();
+  /* MCSDK 当前电机状态机状态，用于判断是否处于 RUN。 */
   const MCI_State_t motorState = MC_GetSTMStateMotor1();
 
   if (FocApp_GetControlMode() == FOC_APP_MODE_POSITION)
@@ -285,9 +294,11 @@ static void MotorCan_SendStatus(uint32_t now)
 /** @brief 编码并发送 MotorCan_SendReferences 对应的数据或通信帧。 */
 static void MotorCan_SendReferences(void)
 {
-  uint8_t data[8] = {0};
+  uint8_t data[8] = {0}; /* ID 0x181 速度与位置参考遥测帧的负载。 */
+  /* MCSDK 多圈机械当前位置换算值，单位为 0.01°。 */
   const int32_t currentCdeg = MotorCan_FloatToS32(
     MC_GetCurrentPosition1() * 5729.577951308232F);
+  /* MCSDK 多圈位置轨迹目标换算值，单位为 0.01°。 */
   const int32_t targetCdeg = MotorCan_FloatToS32(
     MC_GetTargetPosition1() * 5729.577951308232F);
 
@@ -302,8 +313,10 @@ static void MotorCan_SendReferences(void)
 /** @brief 编码并发送 MotorCan_SendElectrical 对应的数据或通信帧。 */
 static void MotorCan_SendElectrical(void)
 {
-  uint8_t data[8] = {0};
+  uint8_t data[8] = {0}; /* ID 0x182 d/q 轴电流遥测帧的负载。 */
+  /* MCSDK 测得的 q/d 轴实际电流，结构成员单位为 A。 */
   const qd_f_t current = MC_GetIqdMotor1_F();
+  /* MCSDK 当前 q/d 轴电流参考，结构成员单位为 A。 */
   const qd_f_t reference = MC_GetIqdrefMotor1_F();
 
   MotorCan_WriteS16(
@@ -320,9 +333,9 @@ static void MotorCan_SendElectrical(void)
 /** @brief 初始化 MotorCan_Init 所属模块、外设或运行状态。 */
 bool MotorCan_Init(void)
 {
-  GPIO_InitTypeDef gpio = {0};
-  RCC_PeriphCLKInitTypeDef clock = {0};
-  FDCAN_FilterTypeDef filter = {0};
+  GPIO_InitTypeDef gpio = {0};               /* PA11/PB9 FDCAN 复用功能的 GPIO 配置。 */
+  RCC_PeriphCLKInitTypeDef clock = {0};      /* FDCAN 外设时钟源选择配置。 */
+  FDCAN_FilterTypeDef filter = {0};          /* 仅允许命令 ID 0x100 进入 FIFO0 的过滤器。 */
 
   MotorCan_Ready = false;
   MotorCan_LastInitAttemptTick = HAL_GetTick();
@@ -380,7 +393,7 @@ bool MotorCan_Init(void)
   filter.IdType = FDCAN_STANDARD_ID;
   filter.FilterIndex = 0U;
   filter.FilterType = FDCAN_FILTER_MASK;
-  filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
+  filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;//通过过滤器就放入FIFO
   filter.FilterID1 = MOTOR_CAN_ID_COMMAND;
   filter.FilterID2 = 0x7FFU;
   if ((HAL_FDCAN_ConfigFilter(&MotorCan_Handle, &filter) != HAL_OK) ||
@@ -399,6 +412,7 @@ bool MotorCan_Init(void)
 /** @brief 执行 MotorCan_Tick 对应的周期任务或电机控制流程。 */
 void MotorCan_Tick(void)
 {
+  /* 本轮周期处理开始时读取的 HAL 毫秒节拍。 */
   uint32_t now = HAL_GetTick();
 
   if (!MotorCan_Ready)
